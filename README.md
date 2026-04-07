@@ -33,9 +33,3 @@ cmake --build .
   - config files: `gameinfo.txt`
   - placeholder game runtime data
 
-## Next features
-
-- BSP loader / `.veexbsp` importer
-- PBR renderer and material pipeline
-- Lua scripting host
-- custom tools: `VEEXBSP`, `VEEXRAD`

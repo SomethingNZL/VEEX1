@@ -1,7 +1,0 @@
-// IMPORTANT: Renderer.cpp now calls camera.GetPosition().
-// Make sure your Camera class exposes this method, e.g.:
-//
-//   glm::vec3 GetPosition() const { return m_position; }
-//
-// This is almost certainly already present. If not, add it to Camera.h.
-// No other files need changes.

@@ -44,16 +44,22 @@ struct BatchKey {
     uint32_t roughnessID  = 0;   // GL handle — roughness  (unit 2);  0 = scalar
     uint32_t metallicID   = 0;   // GL handle — metallic   (unit 3);  0 = scalar
     uint32_t emissiveID   = 0;   // GL handle — emissive   (unit 5);  0 = none
+    uint32_t specMaskID   = 0;   // GL handle — Source specmask-style combined maps
+    uint32_t texinfoID    = 0;   // BSP texinfo index, preserves texture mapping/orientation
+    uint32_t orientationID= 0;   // Encoded major face direction
     uint32_t shaderFlags  = 0;   // ShaderFeatureFlags bitmask for this material
 
     // Two batches may be merged only if every field is identical.
     bool operator==(const BatchKey& o) const noexcept {
-        return textureID   == o.textureID
-            && normalID    == o.normalID
-            && roughnessID == o.roughnessID
-            && metallicID  == o.metallicID
-            && emissiveID  == o.emissiveID
-            && shaderFlags == o.shaderFlags;
+        return textureID    == o.textureID
+            && normalID     == o.normalID
+            && roughnessID  == o.roughnessID
+            && metallicID   == o.metallicID
+            && specMaskID   == o.specMaskID
+            && emissiveID   == o.emissiveID
+            && texinfoID    == o.texinfoID
+            && orientationID== o.orientationID
+            && shaderFlags  == o.shaderFlags;
     }
 };
 
@@ -74,7 +80,10 @@ template<> struct hash<veex::BatchKey> {
         mix(k.normalID);
         mix(k.roughnessID);
         mix(k.metallicID);
+        mix(k.specMaskID);
         mix(k.emissiveID);
+        mix(k.texinfoID);
+        mix(k.orientationID);
         mix(k.shaderFlags);
         return h;
     }
@@ -108,6 +117,7 @@ struct RenderBatch {
         bool  hasNormalMap     = false;
         bool  hasRoughnessMap  = false;
         bool  hasMetallicMap   = false;
+        bool  hasSpecMaskMap   = false;
         bool  hasEmissiveMap   = false;
     } matParams;
 
@@ -116,6 +126,7 @@ struct RenderBatch {
     uint32_t normalID   () const { return key.normalID;    }
     uint32_t roughnessID() const { return key.roughnessID; }
     uint32_t metallicID () const { return key.metallicID;  }
+    uint32_t specMaskID () const { return key.specMaskID;  }
 };
 
 } // namespace veex

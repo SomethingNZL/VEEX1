@@ -252,9 +252,23 @@ glm::vec3 PlayerController::Move(const glm::vec3& feetPos, const glm::vec3& wish
 
     // 3. Jump
     if (m_grounded && jumpPressed && !m_jumpHeld) {
-        m_velocity.y = kJumpImpulse; 
-        m_grounded   = false;
-        m_jumpHeld   = true;
+        if (!m_grounded) {
+            // Air control
+            float airAccel = kAccelAir * kAirControlFactor;
+            float curSpeed = glm::dot(m_velocity, wishDir);
+            float addSpeed = scaledWishSpeed - curSpeed;
+            if (addSpeed > 0.0f) {
+                m_velocity += wishDir * std::min(airAccel * scaledWishSpeed * dt, addSpeed);
+            }
+        }
+
+        // Bunny hopping
+        if (glm::length(glm::vec3(m_velocity.x, 0.0f, m_velocity.z)) > kWalkSpeed) {
+            m_velocity *= kBhopSpeedBoost;
+        }
+        m_velocity.y = kJumpImpulse;
+        m_grounded = false;
+        m_jumpHeld = true;
     }
     if (!jumpPressed) m_jumpHeld = false;
 

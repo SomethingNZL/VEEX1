@@ -67,6 +67,7 @@ struct MaterialParams {
     bool hasNormalMap   = false;
     bool hasRoughnessMap= false;
     bool hasMetallicMap = false;
+    bool hasSpecMaskMap = false;
     bool hasEmissiveMap = false;
 };
 

@@ -6,7 +6,7 @@ set(ENGINE_NAME VEEXEngine)
 # Find dependencies
 find_package(OpenGL REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
-find_package(glm CONFIG REQUIRED)
+find_package(glm REQUIRED)
 
 # Paths to third_party modules
 set(GLAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glad")
@@ -96,4 +96,12 @@ add_custom_command(TARGET ${ENGINE_NAME} POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
         "$<TARGET_FILE_DIR:${ENGINE_NAME}>/shaders"
     COMMENT "Copying shaders to output directory"
+)
+
+# Ensure glm is included
+find_package(glm REQUIRED)
+
+# Add glm include directory
+target_include_directories(${ENGINE_NAME} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
 )

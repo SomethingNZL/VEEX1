@@ -40,6 +40,11 @@ public:
     static constexpr float kFriction    = 4.0f;
     static constexpr float kStopSpeed   = 100.0f * kScale;
 
+    // --- Additions for Source-like physics ---
+    static constexpr float kAirControlFactor = 0.3f; // Air control strength
+    static constexpr float kBhopSpeedBoost = 1.05f;  // Bunny hop speed multiplier
+    static constexpr float kJumpBufferTime = 0.2f;   // Jump input buffering time
+
     PlayerController();
 
     void      BuildCollisionMesh(const BSP& bsp);
@@ -73,6 +78,7 @@ private:
     bool       m_noclip             = false;
     bool       m_jumpHeld           = false;
     bool       m_loggedFirstGround  = false; 
+    float      m_jumpBufferTimer    = 0.0f; // Timer for jump buffering
 };
 
 } // namespace veex

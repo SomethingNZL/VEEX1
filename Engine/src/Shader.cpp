@@ -306,10 +306,10 @@ void Shader::UploadMaterialParams(const MaterialParams& mat)
     SetFloat("u_EmissiveScale",   mat.emissiveScale);
     SetFloat("u_RefractionScale", mat.refractionScale);
     SetFloat("u_EnvmapTint",      mat.envmapTint);
-    SetInt  ("u_HasNormal",       mat.hasNormalMap    ? 1 : 0);
-    SetInt  ("u_HasRoughness",    mat.hasRoughnessMap ? 1 : 0);
-    SetInt  ("u_HasMetallic",     mat.hasMetallicMap  ? 1 : 0);
-    SetInt  ("u_HasEmissive",     mat.hasEmissiveMap  ? 1 : 0);
+    SetInt  ("u_HasNormalMap",    mat.hasNormalMap    ? 1 : 0);
+    SetInt  ("u_HasRoughnessMap", mat.hasRoughnessMap ? 1 : 0);
+    SetInt  ("u_HasMetallicMap",  mat.hasMetallicMap  ? 1 : 0);
+    SetInt  ("u_HasEmissiveMap",  mat.hasEmissiveMap  ? 1 : 0);
 }
 
 // ── Uniform location cache ────────────────────────────────────────────────────

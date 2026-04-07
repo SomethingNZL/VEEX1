@@ -101,6 +101,15 @@ bool BSP::BuildVertexBuffer() {
     std::unordered_map<BatchKey, std::vector<Vertex>> materialVerts;
     std::unordered_map<BatchKey, RenderBatch> materialMeta;
 
+    auto ComputeDirectionBatchID = [](const glm::vec3& normal) {
+        glm::vec3 absN = glm::abs(normal);
+        if (absN.x >= absN.y && absN.x >= absN.z)
+            return normal.x >= 0.0f ? 1u : 2u;
+        if (absN.y >= absN.x && absN.y >= absN.z)
+            return normal.y >= 0.0f ? 3u : 4u;
+        return normal.z >= 0.0f ? 5u : 6u;
+    };
+
     for (int fi = 0; fi < (int)faces.size(); ++fi) {
         const dface_t& f = faces[fi];
         if (f.texinfo < 0) continue;
@@ -112,12 +121,17 @@ bool BSP::BuildVertexBuffer() {
         if (facePoints.size() < 3) continue;
 
         Material mat = MaterialSystem::Get().GetMaterial(m_parser.GetTextureName(f.texinfo));
+        glm::vec3 faceNormal = SourceToGL(m_parser.GetFaceNormal(f));
+        uint32_t orientationID = ComputeDirectionBatchID(faceNormal);
 
         BatchKey key;
-        key.textureID   = mat.textureID;
-        key.normalID    = mat.normalID;
-        key.roughnessID = mat.roughnessID;
-        key.metallicID  = mat.metallicID;
+        key.textureID    = mat.textureID;
+        key.normalID     = mat.normalID;
+        key.roughnessID  = mat.roughnessID;
+        key.metallicID   = mat.metallicID;
+        key.specMaskID   = mat.specMaskID;
+        key.texinfoID    = static_cast<uint32_t>(f.texinfo);
+        key.orientationID= orientationID;
 
         if (materialMeta.find(key) == materialMeta.end()) {
             RenderBatch rb;
@@ -128,10 +142,10 @@ bool BSP::BuildVertexBuffer() {
             rb.matParams.hasNormalMap = (mat.normalID != 0) ? 1 : 0;
             rb.matParams.hasRoughnessMap = (mat.roughnessID != 0) ? 1 : 0;
             rb.matParams.hasMetallicMap = (mat.metallicID != 0) ? 1 : 0;
+            rb.matParams.hasSpecMaskMap = (mat.specMaskID != 0) ? 1 : 0;
             materialMeta[key] = rb;
         }
 
-        glm::vec3 N = SourceToGL(m_parser.GetFaceNormal(f));
         glm::ivec2 dim = m_parser.GetTextureDimensions(f.texinfo);
         bool hasLM = (fi < (int)lmInfos.size() && lmInfos[fi].valid);
 
@@ -140,9 +154,9 @@ bool BSP::BuildVertexBuffer() {
             for (int k = 0; k < 3; ++k) {
                 Vertex v;
                 v.position = SourceToGL(tri[k]) * kWorldScale;
-                v.normal   = N;
+                v.normal   = faceNormal;
                 v.texCoord = ComputeTexCoord(tri[k], ti, (float)dim.x, (float)dim.y);
-                v.lmCoord  = hasLM ? ComputeLightmapCoord(tri[k], ti, f, lmInfos[fi]) : glm::vec2(0.5f);
+                v.lmCoord  = hasLM ? ComputeLightmapCoord(tri[k], ti, f, lmInfos[fi]) : glm::vec2(-1.0f);
                 materialVerts[key].push_back(v);
             }
         }

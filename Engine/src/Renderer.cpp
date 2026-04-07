@@ -14,6 +14,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <unordered_map>
 
 namespace veex {
 
@@ -54,9 +55,7 @@ bool Renderer::Init(const GameInfo& game)
     // ── ShaderKit: Compile standard world combo ───────────────────────────────
     ShaderCombo worldCombo;
     worldCombo.name  = "Standard_World_Opaque";
-    worldCombo.flags = SHADER_FEATURE_NORMAL_MAP 
-                     | SHADER_FEATURE_LIGHTMAP 
-                     | SHADER_FEATURE_PBR 
+    worldCombo.flags = SHADER_FEATURE_LIGHTMAP 
                      | SHADER_FEATURE_FOG;
 
     const std::string vPath = ResolveAssetPath("shaders/vr_standard.vert", game);
@@ -94,8 +93,17 @@ bool Renderer::Init(const GameInfo& game)
     glCullFace(GL_BACK);
     glFrontFace(GL_CW); // Source Engine uses Clockwise winding for front faces
 
-    m_fallbackLightmap = MakeFallbackTexture(255, 255, 255);
+    m_fallbackAlbedo   = MakeFallbackTexture(255, 255, 255);
+    // Lightmaps default to black when missing; no lightmap means direct/ambient only.
+    m_fallbackLightmap = MakeFallbackTexture(0, 0, 0);
     m_fallbackNormal   = MakeFallbackTexture(128, 128, 255);
+    m_roughnessDefault = MakeFallbackTexture(180, 180, 180);
+    m_metallicDefault  = MakeFallbackTexture(0, 0, 0);
+    m_emissiveDefault  = MakeFallbackTexture(0, 0, 0);
+    m_specMaskDefault  = MakeFallbackTexture(0, 0, 0);
+
+    // Keep the normal fallback separate for texture binding
+    m_normalDefault    = MakeFallbackTexture(128, 128, 255);
 
     Logger::Info("[Renderer] Initialized with Render Graph backend and GL_CW winding.");
     return true;
@@ -187,7 +195,9 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
     m_bspShader.Bind();
     m_bspShader.UploadSceneBlock(m_sceneUBO, scene);
     m_bspShader.SetMat4("u_Model", glm::value_ptr(glm::mat4(1.0f)));
-    
+    glm::mat3 normalMatrix = glm::mat3(1.0f);
+    m_bspShader.SetMat3("u_NormalMatrix", glm::value_ptr(normalMatrix));
+
     // Abstracted sampler bindings (ShaderKit)
     m_bspShader.BindSampler("u_MainTexture",      0);
     m_bspShader.BindSampler("u_LightmapTexture",  1);
@@ -195,6 +205,7 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
     m_bspShader.BindSampler("u_MetallicTexture",  3);
     m_bspShader.BindSampler("u_NormalTexture",    4);
     m_bspShader.BindSampler("u_EmissiveTexture",  5);
+    m_bspShader.BindSampler("u_SpecMaskTexture",  6);
 
     // ── 3. Bind Shared Assets ─────────────────────────────────────────────────
     const uint32_t lmAtlas = map.GetParser().GetLightmapAtlasID();
@@ -204,38 +215,37 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
     // ── 4. Execute Batched Draw Calls ─────────────────────────────────────────
     glBindVertexArray(m_vao);
     for (const auto& batch : batches) {
-        // Bind Albedo
-        glActiveTexture(GL_TEXTURE0); 
-        glBindTexture(GL_TEXTURE_2D, batch.textureID());
-        
-        // Bind PBR maps (or fallback)
-        glActiveTexture(GL_TEXTURE2); 
-        glBindTexture(GL_TEXTURE_2D, batch.roughnessID() ? batch.roughnessID() : m_fallbackNormal);
-        
-        glActiveTexture(GL_TEXTURE3); 
-        glBindTexture(GL_TEXTURE_2D, batch.metallicID() ? batch.metallicID() : m_fallbackNormal);
-        
-        glActiveTexture(GL_TEXTURE4); 
-        glBindTexture(GL_TEXTURE_2D, batch.normalID() ? batch.normalID() : m_fallbackNormal);
-        
-        glActiveTexture(GL_TEXTURE5); 
-        glBindTexture(GL_TEXTURE_2D, batch.key.emissiveID ? batch.key.emissiveID : m_fallbackLightmap);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, batch.textureID() ? batch.textureID() : m_fallbackAlbedo);
 
-        // Batch-specific Material Scalars (ShaderKit)
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, batch.roughnessID() ? batch.roughnessID() : m_roughnessDefault);
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, batch.metallicID() ? batch.metallicID() : m_metallicDefault);
+
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, batch.normalID() ? batch.normalID() : m_normalDefault);
+
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, batch.key.emissiveID ? batch.key.emissiveID : m_emissiveDefault);
+
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, batch.key.specMaskID ? batch.key.specMaskID : m_specMaskDefault);
+
         MaterialParams mp;
-        mp.roughness      = batch.matParams.roughness;
-        mp.metallic       = batch.matParams.metallic;
-        mp.emissiveScale  = batch.matParams.emissiveScale;
-        mp.hasNormalMap   = batch.normalID() ? true : false;
+        mp.roughness       = batch.matParams.roughness;
+        mp.metallic        = batch.matParams.metallic;
+        mp.emissiveScale   = batch.matParams.emissiveScale;
+        mp.hasNormalMap    = batch.normalID() ? true : false;
         mp.hasRoughnessMap = batch.roughnessID() ? true : false;
         mp.hasMetallicMap  = batch.metallicID() ? true : false;
+        mp.hasSpecMaskMap  = batch.key.specMaskID ? true : false;
         mp.hasEmissiveMap  = batch.key.emissiveID ? true : false;
-        
-        m_bspShader.UploadMaterialParams(mp);
 
-        // Draw the batch
-        glDrawArrays(GL_TRIANGLES, 
-                     static_cast<GLint>(batch.offset), 
+        m_bspShader.UploadMaterialParams(mp);
+        glDrawArrays(GL_TRIANGLES,
+                     static_cast<GLint>(batch.offset),
                      static_cast<GLsizei>(batch.count));
     }
     
@@ -254,8 +264,14 @@ void Renderer::Shutdown()
     if (m_vao)      glDeleteVertexArrays(1, &m_vao);
     if (m_vbo)      glDeleteBuffers(1, &m_vbo);
     
+    if (m_fallbackAlbedo)   glDeleteTextures(1, &m_fallbackAlbedo);
     if (m_fallbackLightmap) glDeleteTextures(1, &m_fallbackLightmap);
     if (m_fallbackNormal)   glDeleteTextures(1, &m_fallbackNormal);
+    if (m_roughnessDefault) glDeleteTextures(1, &m_roughnessDefault);
+    if (m_metallicDefault)  glDeleteTextures(1, &m_metallicDefault);
+    if (m_emissiveDefault)  glDeleteTextures(1, &m_emissiveDefault);
+    if (m_specMaskDefault)  glDeleteTextures(1, &m_specMaskDefault);
+    if (m_normalDefault)    glDeleteTextures(1, &m_normalDefault);
 
     Logger::Info("[Renderer] Shutdown complete.");
 }

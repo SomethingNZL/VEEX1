@@ -1,13 +1,14 @@
 #version 330 core
 
-// Attributes from Renderer.cpp VAO setup
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNormal;
-layout (location = 2) in vec2 aTexCoord;
-layout (location = 3) in vec2 aLMCoord;
-layout (location = 4) in vec4 aTangent; // xyz = Tangent, w = Bitangent sign
+layout (location = 0) in vec3 a_Pos;
+layout (location = 1) in vec3 a_Normal;
+layout (location = 2) in vec2 a_TexCoord;
+layout (location = 3) in vec2 a_LMCoord;
+layout (location = 4) in vec4 a_Tangent;
 
-// UBO for Scene Data (std140)
+uniform mat4 u_Model;
+uniform mat3 u_NormalMatrix;
+
 layout (std140) uniform SceneBlock {
     mat4 u_ViewProj;
     vec4 u_CameraPos;
@@ -22,37 +23,22 @@ layout (std140) uniform SceneBlock {
     float u_Time;
 } scene;
 
-uniform mat4 u_Model;
-uniform mat3 u_NormalMatrix;
-
-// Outputs to Fragment Shader
-out vec3 v_WorldPos;
 out vec2 v_TexCoord;
 out vec2 v_LMCoord;
 out vec3 v_Normal;
-out vec3 v_Tangent;
-out vec3 v_Bitangent;
+out vec3 v_FragPos;
+out mat3 v_TBN;
 
 void main() {
-    vec4 worldPos = u_Model * vec4(aPos, 1.0);
-    v_WorldPos = worldPos.xyz;
-    v_TexCoord = aTexCoord;
-    v_LMCoord  = aLMCoord;
-    
-    // Transform normal to world space
-    vec3 N = normalize(u_NormalMatrix * aNormal);
-    v_Normal = N;
+    vec4 worldPos = u_Model * vec4(a_Pos, 1.0);
+    v_FragPos = worldPos.xyz;
+    v_TexCoord = a_TexCoord;
+    v_LMCoord = a_LMCoord;
 
-    // Split TBN into vectors for better interpolation stability on older drivers
-    vec3 T = normalize(u_NormalMatrix * aTangent.xyz);
-    
-    // Gram-Schmidt Orthonormalization: ensures T is perfectly 90 degrees to N
-    T = normalize(T - dot(T, N) * N);
-    
-    vec3 B = cross(N, T) * aTangent.w;
-    
-    v_Tangent = T;
-    v_Bitangent = B;
+    v_Normal = normalize(u_NormalMatrix * a_Normal);
+    vec3 T = normalize(u_NormalMatrix * a_Tangent.xyz);
+    vec3 B = cross(v_Normal, T) * a_Tangent.w;
+    v_TBN = mat3(T, B, v_Normal);
 
     gl_Position = scene.u_ViewProj * worldPos;
 }

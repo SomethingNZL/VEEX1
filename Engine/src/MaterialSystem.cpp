@@ -8,6 +8,7 @@
 #include <glad/gl.h>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 
 namespace veex {
 
@@ -65,7 +66,8 @@ void MaterialSystem::Shutdown() {
     std::unordered_map<uint32_t, bool> seen;
     for (auto& [key, mat] : m_materialCache) {
         for (uint32_t id : { mat.textureID, mat.roughnessID,
-                              mat.metallicID, mat.normalID }) {
+                              mat.metallicID, mat.normalID,
+                              mat.specMaskID }) {
             if (id != 0 && id != m_fallbackTexture && !seen[id]) {
                 glDeleteTextures(1, &id);
                 seen[id] = true;
@@ -96,7 +98,10 @@ Material MaterialSystem::GetMaterial(const std::string& name) {
     // 2. Tools / skip filters
     if (key.rfind("tools/", 0) == 0 || key == "trigger" ||
         key == "nodraw"             || key == "sky") {
-        Material mat{ m_fallbackTexture, m_defaultShader };
+        Material mat;
+        mat.textureID = m_fallbackTexture;
+        mat.diffuseID = m_fallbackTexture;
+        mat.shaderID = m_defaultShader;
         std::lock_guard<std::mutex> lock(m_cacheMutex);
         m_materialCache[key] = mat;
         return mat;
@@ -122,27 +127,27 @@ Material MaterialSystem::GetMaterial(const std::string& name) {
         }
 
         if (!albedoPath.empty()) {
-            mat.textureID = LoadTexture(albedoPath);
+            mat.textureID = LoadTexture(albedoPath, true);
+            mat.diffuseID = mat.textureID;
         }
 
         // ── PBR maps — derive base name by stripping the extension ────────────
-        // We use the resolved albedo path's stem so the suffix search lands in
-        // the same directory, e.g.:
-        //   albedo  → materials/brick/brickfloor001a.png
-        //   roughs  → materials/brick/brickfloor001a_roughness.png  (etc.)
-        //
-        // We search by constructing the material key (relative, no extension)
-        // and appending the suffix before the extension search loop.
         if (!albedoPath.empty()) {
-            // Build the key without extension so TryLoadSuffix can append suffix+ext.
-            // key already has no extension (it comes from the BSP texture name).
             mat.roughnessID = TryLoadSuffix(key, "_roughness");
             mat.metallicID  = TryLoadSuffix(key, "_metallic");
             mat.normalID    = TryLoadSuffix(key, "_normal");
+            mat.specMaskID  = TryLoadSuffix(key, "_specmask");
+            if (mat.normalID == 0)
+                mat.normalID = TryLoadSuffix(key, "_bumpmap");
+            if (mat.normalID == 0)
+                mat.normalID = TryLoadSuffix(key, "_bump");
         }
     }
 
-    if (mat.textureID == 0) mat.textureID = m_fallbackTexture;
+    if (mat.textureID == 0) {
+        mat.textureID = m_fallbackTexture;
+        mat.diffuseID = m_fallbackTexture;
+    }
 
     // 3. Cache update
     {
@@ -201,26 +206,45 @@ uint32_t MaterialSystem::CreateDummyTexture() {
     return tex;
 }
 
-uint32_t MaterialSystem::LoadTexture(const std::string& path) {
-    int w, h, ch;
-    unsigned char* data = stbi_load(path.c_str(), &w, &h, &ch, 4);
-    if (!data) return 0;
+Material MaterialSystem::LoadMaterial(const std::string& basePath) {
+    Material mat;
+    mat.textureID  = LoadTexture(basePath + "_diffuse.png", true);
+    mat.diffuseID  = mat.textureID;
+    mat.metallicID = LoadTexture(basePath + "_metallic.png");
+    mat.roughnessID= LoadTexture(basePath + "_roughness.png");
+    mat.normalID   = LoadTexture(basePath + "_normal.png");
+    return mat;
+}
 
-    std::lock_guard<std::mutex> lock(g_glContextMutex);
-    uint32_t tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     GL_REPEAT);
+GLuint MaterialSystem::LoadTexture(const std::string& path, bool srgb) {
+    if (!std::filesystem::exists(path)) {
+        Logger::Warn("MaterialSystem: Texture not found: " + path);
+        return 0;
+    }
+
+    int width = 0, height = 0, channels = 0;
+    stbi_uc* data = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+    if (!data) {
+        Logger::Warn("MaterialSystem: Failed to load texture: " + path);
+        return 0;
+    }
+
+    GLuint textureID = 0;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    GLenum internalFormat = srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8;
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, 0);
-    stbi_image_free(data);
 
-    Logger::Info("MaterialSystem: Loaded " + path);
-    return tex;
+    stbi_image_free(data);
+    Logger::Info("MaterialSystem: Loaded texture " + path);
+    return textureID;
 }
 
 } // namespace veex

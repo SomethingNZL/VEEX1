@@ -62,8 +62,14 @@ private:
     uint32_t m_vao              = 0;
     uint32_t m_vbo              = 0;
     uint32_t m_sceneUBO         = 0;
-    uint32_t m_fallbackLightmap = 0;   // 1x1 White
+    uint32_t m_fallbackAlbedo   = 0;   // 1x1 white albedo for missing textures
+    uint32_t m_fallbackLightmap = 0;   // 1x1 black for missing lightmaps
     uint32_t m_fallbackNormal   = 0;   // 1x1 Flat Tangent (128, 128, 255)
+    uint32_t m_roughnessDefault = 0;   // 1x1 default roughness texture
+    uint32_t m_metallicDefault  = 0;   // 1x1 default metallic texture
+    uint32_t m_emissiveDefault  = 0;   // 1x1 black emissive texture
+    uint32_t m_normalDefault    = 0;   // 1x1 normal fallback for missing maps
+    uint32_t m_specMaskDefault  = 0;   // 1x1 combined specmask fallback
     int      m_currentVertexCount = 0;
 
     // ── Render Graph ──────────────────────────────────────────────────────────

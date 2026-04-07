@@ -1,0 +1,24 @@
+
+*.o
+*.obj
+*.exe
+*.dll
+*.dylib
+*.so
+*.ipch
+*.pdb
+
+# ── VEEX Engine Build Folders ─────────────────────────────────
+# Ignore both the local Mac and Windows cross-compile builds
+build/
+build_win/
+game/materials
+game/maps
+
+# ── macOS Junk ────────────────────────────────────────────────
+.DS_Store
+
+# ── IDE Configs ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.user

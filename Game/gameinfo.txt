@@ -1,0 +1,5 @@
+gameName=VEEXSample
+gamePath=./Game
+textures=./Game/textures
+models=./Game/models
+maps=./Game/maps

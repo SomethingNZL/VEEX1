@@ -85,6 +85,12 @@ bool Renderer::Init(const GameInfo& game)
     glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, lmCoord));
     glEnableVertexAttribArray(4); // Tangent
     glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, tangent));
+    glEnableVertexAttribArray(5); // RNM Radiosity U
+    glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, rnmU));
+    glEnableVertexAttribArray(6); // RNM Radiosity V
+    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, rnmV));
+    glEnableVertexAttribArray(7); // RNM Radiosity N
+    glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, rnmN));
 
     glBindVertexArray(0);
 

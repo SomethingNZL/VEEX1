@@ -44,6 +44,7 @@ bool BSPParser::LoadFromFile(const std::string& path, const std::string&)
     ReadLump(file, LUMP_NODES,                m_nodes);
     ReadLump(file, LUMP_LEAVES,               m_leaves);
     ReadLump(file, LUMP_LEAF_FACES,           m_leafFaces);
+    ReadLump(file, LUMP_LEAF_BRUSHES,         m_leafBrushes);
 
     // Prefer HDR lighting lump; fall back to LDR.
     ReadLump(file, LUMP_LIGHTING_HDR, m_lightingData);
@@ -51,6 +52,24 @@ bool BSPParser::LoadFromFile(const std::string& path, const std::string&)
         ReadLump(file, LUMP_LIGHTING, m_lightingData);
         if (!m_lightingData.empty())
             Logger::Info("[BSPParser] HDR lighting lump absent — using LDR fallback.");
+    }
+
+    // Load world lights for RNM indirect lighting
+    ReadLump(file, LUMP_WORLDLIGHTS_HDR, m_worldLights);
+    if (m_worldLights.empty()) {
+        ReadLump(file, LUMP_WORLDLIGHTS, m_worldLights);
+        if (!m_worldLights.empty())
+            Logger::Info("[BSPParser] HDR world lights lump absent — using LDR fallback.");
+    }
+
+    // Load leaf ambient lighting for RNM
+    ReadLump(file, LUMP_LEAF_AMBIENT_LIGHTING_HDR, m_leafAmbientLighting);
+    ReadLump(file, LUMP_LEAF_AMBIENT_INDEX_HDR, m_leafAmbientIndex);
+    if (m_leafAmbientLighting.empty() || m_leafAmbientIndex.empty()) {
+        ReadLump(file, LUMP_LEAF_AMBIENT_LIGHTING, m_leafAmbientLighting);
+        ReadLump(file, LUMP_LEAF_AMBIENT_INDEX, m_leafAmbientIndex);
+        if (!m_leafAmbientLighting.empty() && !m_leafAmbientIndex.empty())
+            Logger::Info("[BSPParser] HDR leaf ambient lighting lumps absent — using LDR fallback.");
     }
 
     LoadVisibility(file);
@@ -279,15 +298,31 @@ uint32_t BSPParser::BuildLightmapAtlas()
         Logger::Warn("[BSPParser] Lightmap: " + std::to_string(outOfBoundsFaces)
                      + " faces skipped — lighting lump out-of-bounds.");
 
-    // ── Step 4: upload GL_RGB16F ──────────────────────────────────────────────
+    // ── Step 4: upload GL_RGB8 (more compatible than GL_RGB16F) ─────────────────
     if (m_lightmapAtlasID) glDeleteTextures(1, &m_lightmapAtlasID);
 
     glGenTextures(1, &m_lightmapAtlasID);
     glBindTexture(GL_TEXTURE_2D, m_lightmapAtlasID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F,
+    
+    // Convert HDR values to LDR for better compatibility
+    std::vector<uint8_t> ldrPixels(atlasPixels.size() * 3);
+    for (size_t i = 0; i < atlasPixels.size(); ++i) {
+        // Apply simple tone mapping: divide by (1 + value) to compress HDR range
+        glm::vec3 hdr = atlasPixels[i];
+        glm::vec3 ldr = hdr / (1.0f + hdr);
+        // Gamma correction (approximate sRGB)
+        ldr = glm::pow(ldr, glm::vec3(1.0f / 2.2f));
+        // Clamp and convert to 8-bit
+        ldr = glm::clamp(ldr * 255.0f, 0.0f, 255.0f);
+        ldrPixels[i*3+0] = static_cast<uint8_t>(ldr.x);
+        ldrPixels[i*3+1] = static_cast<uint8_t>(ldr.y);
+        ldrPixels[i*3+2] = static_cast<uint8_t>(ldr.z);
+    }
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8,
                  atlasW, atlasH, 0,
-                 GL_RGB, GL_FLOAT,
-                 reinterpret_cast<const float*>(atlasPixels.data()));
+                 GL_RGB, GL_UNSIGNED_BYTE,
+                 ldrPixels.data());
 
     // Bilinear filtering — lightmaps are low-frequency; no mipmaps needed.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -299,7 +334,7 @@ uint32_t BSPParser::BuildLightmapAtlas()
     Logger::Info("[BSPParser] Lightmap atlas uploaded: GL id="
                  + std::to_string(m_lightmapAtlasID)
                  + "  size=" + std::to_string(atlasW) + "x" + std::to_string(atlasH)
-                 + "  format=GL_RGB16F");
+                 + "  format=GL_RGB8");
     return m_lightmapAtlasID;
 }
 
@@ -417,6 +452,123 @@ std::unordered_set<int> BSPParser::GetVisibleFaceIndices(const glm::vec3& worldP
         }
     }
     return visFaces;
+}
+
+// ── RNM (Radiosity Normal Maps) ───────────────────────────────────────────────
+
+// Helper: Decode the compressed ambient cube from leaf ambient lighting data.
+// The ambient cube stores 6 face intensities (±X, ±Y, ±Z) as RGBE values.
+static glm::vec3 DecodeAmbientCubeFace(const uint8_t* data)
+{
+    // Each face is stored as 4 bytes: R, G, B, exponent (same format as lightmaps)
+    ColorRGBExp32 c;
+    c.r = data[0];
+    c.g = data[1];
+    c.b = data[2];
+    c.exponent = static_cast<int8_t>(data[3]);
+    return BSPParser::DecodeRGBExp32(c);
+}
+
+void BSPParser::ComputeRNMData()
+{
+    const int numFaces = static_cast<int>(m_faces.size());
+    m_faceRNMData.resize(numFaces);
+
+    if (m_lightingData.empty()) {
+        Logger::Warn("[BSPParser] RNM: no lighting data — RNM computation skipped.");
+        return;
+    }
+
+    Logger::Info("[BSPParser] RNM: Computing radiosity normal map data for " +
+                 std::to_string(numFaces) + " faces...");
+
+    // For each face, compute the average lighting direction and intensity
+    // from the lightmap samples. This is used to build the RNM basis vectors.
+    int validFaces = 0;
+    for (int fi = 0; fi < numFaces; ++fi) {
+        const dface_t& face = m_faces[fi];
+        FaceRNMData& rnm = m_faceRNMData[fi];
+        rnm.valid = false;
+
+        // Skip faces without lightmap data
+        if (face.lightofs < 0 || face.styles[0] == 255) continue;
+        if (face.texinfo < 0 || face.texinfo >= (int)m_texinfo.size()) continue;
+        if (m_texinfo[face.texinfo].flags & 0x0080) continue; // SURF_NODRAW
+
+        int lw = face.LightmapTextureSizeInLuxels[0] + 1;
+        int lh = face.LightmapTextureSizeInLuxels[1] + 1;
+        if (lw <= 0 || lh <= 0) continue;
+
+        const int startSample = face.lightofs / static_cast<int>(sizeof(ColorRGBExp32));
+        const int numSamples = lw * lh;
+        if (startSample + numSamples > static_cast<int>(m_lightingData.size())) continue;
+
+        // Get face normal for building RNM basis
+        glm::vec3 faceNormal = GetFaceNormal(face);
+
+        // Build an orthonormal basis: normal, tangent, bitangent
+        // Use the lightmap U/V directions from texinfo to build tangent/bitangent
+        const texinfo_t& texinfo = m_texinfo[face.texinfo];
+        
+        // Extract lightmap basis vectors from the lightmap texture vectors
+        // These are stored in the texinfo structure
+        glm::vec3 lightmapU(texinfo.lightmapVecs[0][0], texinfo.lightmapVecs[0][1], texinfo.lightmapVecs[0][2]);
+        glm::vec3 lightmapV(texinfo.lightmapVecs[1][0], texinfo.lightmapVecs[1][1], texinfo.lightmapVecs[1][2]);
+
+        // Normalize to get direction vectors
+        float uLen = glm::length(lightmapU);
+        float vLen = glm::length(lightmapV);
+        if (uLen > 0.001f) lightmapU /= uLen;
+        if (vLen > 0.001f) lightmapV /= vLen;
+
+        // Accumulate lighting samples to compute average radiosity
+        glm::vec3 avgLighting(0.0f);
+        glm::vec3 sumU(0.0f), sumV(0.0f), sumN(0.0f);
+
+        for (int y = 0; y < lh; ++y) {
+            for (int x = 0; x < lw; ++x) {
+                glm::vec3 hdr = DecodeRGBExp32(m_lightingData[startSample + y * lw + x]);
+                avgLighting += hdr;
+
+                // Project lighting onto RNM basis vectors
+                // The RNM technique stores lighting in 3 orthogonal directions
+                float uComponent = glm::dot(hdr, lightmapU);
+                float vComponent = glm::dot(hdr, lightmapV);
+                float nComponent = glm::dot(hdr, faceNormal);
+
+                sumU += lightmapU * uComponent;
+                sumV += lightmapV * vComponent;
+                sumN += faceNormal * nComponent;
+            }
+        }
+
+        float invSampleCount = 1.0f / static_cast<float>(numSamples);
+        rnm.radiosityU = sumU * invSampleCount;
+        rnm.radiosityV = sumV * invSampleCount;
+        rnm.radiosityN = sumN * invSampleCount;
+        rnm.valid = true;
+        ++validFaces;
+    }
+
+    Logger::Info("[BSPParser] RNM: Computed data for " + std::to_string(validFaces) +
+                 "/" + std::to_string(numFaces) + " faces.");
+
+    // Log summary statistics
+    if (validFaces > 0) {
+        glm::vec3 totalRadiosity(0.0f);
+        for (int fi = 0; fi < numFaces; ++fi) {
+            if (m_faceRNMData[fi].valid) {
+                totalRadiosity += m_faceRNMData[fi].radiosityU;
+                totalRadiosity += m_faceRNMData[fi].radiosityV;
+                totalRadiosity += m_faceRNMData[fi].radiosityN;
+            }
+        }
+        totalRadiosity /= static_cast<float>(validFaces * 3);
+        Logger::Info("[BSPParser] RNM: Average radiosity = (" +
+                     std::to_string(totalRadiosity.x) + ", " +
+                     std::to_string(totalRadiosity.y) + ", " +
+                     std::to_string(totalRadiosity.z) + ")");
+    }
 }
 
 } // namespace veex

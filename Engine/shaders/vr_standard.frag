@@ -33,6 +33,7 @@ void main() {
     // if (albedo.a < 0.5) discard;
 
     vec3 norm = normalize(v_Normal);
+    
     if (u_HasNormalMap) {
         vec3 nMap = texture(u_NormalTexture, v_TexCoord).rgb;
         nMap = nMap * 2.0 - 1.0;
@@ -48,19 +49,20 @@ void main() {
 
     vec3 diffuseLighting = vec3(0.0);
     #ifdef ENABLE_LIGHTMAPS
+        // Sample the lightmap for lighting
         vec3 lm = vec3(0.0);
         if (v_LMCoord.x >= 0.0 && v_LMCoord.y >= 0.0 &&
             v_LMCoord.x <= 1.001 && v_LMCoord.y <= 1.001) {
             lm = texture(u_LightmapTexture, clamp(v_LMCoord, 0.0, 1.0)).rgb * scene.u_LMExposure;
         }
-        diffuseLighting = lm * 2.0;
+        diffuseLighting = lm + specularHighlight;
     #else
         float nDotL = max(dot(norm, lightDir), 0.0);
         vec3 ambient = scene.u_AmbientCube[2].rgb * 0.3;
-        diffuseLighting = ambient + (nDotL * scene.u_SunColor.rgb);
+        diffuseLighting = ambient + (nDotL * scene.u_SunColor.rgb) + specularHighlight;
     #endif
 
-    vec3 finalColor = (albedo.rgb * diffuseLighting) + specularHighlight;
+    vec3 finalColor = albedo.rgb * diffuseLighting;
 
     #ifdef ENABLE_FOG
         float dist = length(scene.u_CameraPos.xyz - v_FragPos);

@@ -21,15 +21,22 @@ namespace veex {
 // attrib 2: texCoord   (vec2) — albedo UV
 // attrib 3: lmCoord    (vec2) — lightmap UV in [0,1] atlas space
 // attrib 4: tangent    (vec4) — xyz = tangent direction, w = bitangent sign
+// attrib 5: rnmU       (vec3) — RNM radiosity in tangent direction
+// attrib 6: rnmV       (vec3) — RNM radiosity in bitangent direction
+// attrib 7: rnmN       (vec3) — RNM radiosity in normal direction
 //
 // The tangent is computed by MikkTSpace (industry-standard) and must be
 // decoded in the shader as:  bitangent = cross(normal, tangent.xyz) * tangent.w
+// RNM data is computed by BSPParser::ComputeRNMData() and provides indirect lighting
 struct Vertex {
     glm::vec3 position;   // attrib 0
     glm::vec3 normal;     // attrib 1
     glm::vec2 texCoord;   // attrib 2
     glm::vec2 lmCoord;    // attrib 3
     glm::vec4 tangent;    // attrib 4  (MikkTSpace output)
+    glm::vec3 rnmU;       // attrib 5  (RNM radiosity in tangent direction)
+    glm::vec3 rnmV;       // attrib 6  (RNM radiosity in bitangent direction)
+    glm::vec3 rnmN;       // attrib 7  (RNM radiosity in normal direction)
 };
 
 // ── BatchKey ──────────────────────────────────────────────────────────────────

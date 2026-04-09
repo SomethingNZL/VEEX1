@@ -61,6 +61,7 @@ bool BSP::LoadFromFile(const std::string& path, const GameInfo& game) {
 
     ParseSun();
     m_parser.BuildLightmapAtlas();
+    m_parser.ComputeRNMData();  // Compute RNM data for indirect lighting
     return BuildVertexBuffer();
 }
 
@@ -149,6 +150,16 @@ bool BSP::BuildVertexBuffer() {
         glm::ivec2 dim = m_parser.GetTextureDimensions(f.texinfo);
         bool hasLM = (fi < (int)lmInfos.size() && lmInfos[fi].valid);
 
+        // Get RNM data for this face if available
+        const auto& rnmData = m_parser.GetFaceRNMData();
+        glm::vec3 rnmU(0.0f), rnmV(0.0f), rnmN(0.0f);
+        bool hasRNM = (fi < (int)rnmData.size() && rnmData[fi].valid);
+        if (hasRNM) {
+            rnmU = rnmData[fi].radiosityU;
+            rnmV = rnmData[fi].radiosityV;
+            rnmN = rnmData[fi].radiosityN;
+        }
+
         for (size_t i = 1; i + 1 < facePoints.size(); ++i) {
             glm::vec3 tri[3] = { facePoints[0], facePoints[i], facePoints[i+1] };
             for (int k = 0; k < 3; ++k) {
@@ -157,6 +168,9 @@ bool BSP::BuildVertexBuffer() {
                 v.normal   = faceNormal;
                 v.texCoord = ComputeTexCoord(tri[k], ti, (float)dim.x, (float)dim.y);
                 v.lmCoord  = hasLM ? ComputeLightmapCoord(tri[k], ti, f, lmInfos[fi]) : glm::vec2(-1.0f);
+                v.rnmU     = hasRNM ? rnmU : glm::vec3(0.0f);
+                v.rnmV     = hasRNM ? rnmV : glm::vec3(0.0f);
+                v.rnmN     = hasRNM ? rnmN : glm::vec3(0.0f);
                 materialVerts[key].push_back(v);
             }
         }

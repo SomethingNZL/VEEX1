@@ -310,6 +310,14 @@ void Shader::UploadMaterialParams(const MaterialParams& mat)
     SetInt  ("u_HasRoughnessMap", mat.hasRoughnessMap ? 1 : 0);
     SetInt  ("u_HasMetallicMap",  mat.hasMetallicMap  ? 1 : 0);
     SetInt  ("u_HasEmissiveMap",  mat.hasEmissiveMap  ? 1 : 0);
+
+    // ── PBR-lite tuning parameters ─────────────────────────────────────────────
+    // Upload the new uniforms for the hybrid RNM + Source lightmap shading model.
+    SetFloat("u_RNMScale",              mat.rnmScale);
+    SetFloat("u_LightmapSoftness",      mat.lightmapSoftness);
+    SetFloat("u_DiffuseFlattening",     mat.diffuseFlattening);
+    SetFloat("u_EdgePower",             mat.edgePower);
+    SetFloat("u_GeometricRoughnessPower", mat.geometricRoughnessPower);
 }
 
 // ── Uniform location cache ────────────────────────────────────────────────────

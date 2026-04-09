@@ -69,6 +69,14 @@ struct MaterialParams {
     bool hasMetallicMap = false;
     bool hasSpecMaskMap = false;
     bool hasEmissiveMap = false;
+
+    // ── PBR-lite tuning parameters ─────────────────────────────────────────────
+    // These control the hybrid RNM + Source lightmap shading model behavior.
+    float rnmScale              = 1.0f;   // RNM sharpness scale
+    float lightmapSoftness      = 0.5f;   // Lightmap directional softness
+    float diffuseFlattening     = 0.5f;   // Diffuse flattening for rough surfaces
+    float edgePower             = 2.0f;   // Edge term power (grazing angle control)
+    float geometricRoughnessPower = 4.0f; // Curvature sensitivity for geometric roughness fallback
 };
 
 // ── SceneParams ───────────────────────────────────────────────────────────────

@@ -249,6 +249,15 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
         mp.hasSpecMaskMap  = batch.key.specMaskID ? true : false;
         mp.hasEmissiveMap  = batch.key.emissiveID ? true : false;
 
+        // ── PBR-lite tuning parameters ─────────────────────────────────────────────
+        // Set default values for the hybrid RNM + Source lightmap shading model.
+        // These can be tuned per-material if needed in the future.
+        mp.rnmScale              = 1.0f;   // RNM sharpness scale
+        mp.lightmapSoftness      = 0.5f;   // Lightmap directional softness
+        mp.diffuseFlattening     = 0.5f;   // Diffuse flattening for rough surfaces
+        mp.edgePower             = 2.0f;   // Edge term power (grazing angle control)
+        mp.geometricRoughnessPower = 4.0f; // Curvature sensitivity for geometric roughness fallback
+
         m_bspShader.UploadMaterialParams(mp);
         glDrawArrays(GL_TRIANGLES,
                      static_cast<GLint>(batch.offset),

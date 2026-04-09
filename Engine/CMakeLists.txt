@@ -3,6 +3,11 @@ project(VEEXEngine_Core LANGUAGES C CXX)
 
 set(ENGINE_NAME VEEXEngine)
 
+# Require C++20 for std::span (used by VTFParser), concepts, etc.
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # Find dependencies
 find_package(OpenGL REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
@@ -12,6 +17,7 @@ find_package(glm REQUIRED)
 set(GLAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glad")
 set(MIKKT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/MikkTSpace")
 set(MINIAUDIO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
+set(VTFPARSER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/VTFParser")
 
 # glad - bundled in third_party
 add_library(glad STATIC
@@ -22,6 +28,23 @@ target_include_directories(glad PUBLIC
 )
 
 set_source_files_properties("${GLAD_DIR}/src/gl.c" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
+# VTFParser - VTF texture format parser
+add_library(VTFParser STATIC
+    "${VTFPARSER_DIR}/src/vtf.cpp"
+    "${VTFPARSER_DIR}/src/vtf.hpp"
+    "${VTFPARSER_DIR}/src/errors.hpp"
+    "${VTFPARSER_DIR}/src/helpers/check-bounds.hpp"
+    "${VTFPARSER_DIR}/src/file-format-objects/header.hpp"
+    "${VTFPARSER_DIR}/src/file-format-objects/enums.hpp"
+)
+target_include_directories(VTFParser PUBLIC
+    "${VTFPARSER_DIR}"
+)
+set_target_properties(VTFParser PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
 
 add_executable(${ENGINE_NAME}
     src/main.cpp
@@ -39,6 +62,7 @@ add_executable(${ENGINE_NAME}
     src/Model.cpp
     src/stb_impl.cpp
     src/Texture.cpp
+    src/VTFLoader.cpp     # VTF texture format support
     Src/BSPParser.cpp
     Src/MaterialSystem.cpp
     src/EntityParser.cpp
@@ -66,6 +90,7 @@ target_include_directories(${ENGINE_NAME} PRIVATE
     "${GLAD_DIR}/include"
     "${MIKKT_DIR}"
     "${MINIAUDIO_DIR}" # <--- Include miniaudio directory
+    "${VTFPARSER_DIR}" # <--- Include VTFParser directory
 )
 
 target_precompile_headers(${ENGINE_NAME} PRIVATE
@@ -86,7 +111,7 @@ elseif(WIN32)
     target_link_libraries(${ENGINE_NAME} PRIVATE winmm ole32)
 endif()
 
-target_link_libraries(${ENGINE_NAME} PRIVATE glad glfw OpenGL::GL glm::glm)
+target_link_libraries(${ENGINE_NAME} PRIVATE VTFParser glad glfw OpenGL::GL glm::glm)
 
 target_compile_definitions(${ENGINE_NAME} PRIVATE GLFW_INCLUDE_NONE)
 target_compile_definitions(glad PUBLIC GLFW_INCLUDE_NONE)

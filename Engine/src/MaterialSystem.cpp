@@ -2,6 +2,8 @@
 #include "veex/FileSystem.h"
 #include "veex/GameInfo.h"
 #include "veex/Logger.h"
+#include "veex/VTFLoader.h"
+#include "veex/GLHeaders.h"
 
 #include "../third_party/stb/stb_image.h"
 
@@ -41,7 +43,8 @@ static std::string StripSourceSuffix(const std::string& name) {
 
 // Try every supported extension for a given search key under materials/.
 // Returns the resolved disk path, or "" if not found.
-static const char* kExts[] = { ".png", ".jpg", ".jpeg", ".tga", ".bmp", nullptr };
+// VTF is checked first for Source Engine compatibility
+static const char* kExts[] = { ".vtf", ".png", ".jpg", ".jpeg", ".tga", ".bmp", nullptr };
 
 static std::string FindMaterialPath(const std::string& searchKey, const GameInfo& game) {
     for (int i = 0; kExts[i]; ++i) {
@@ -222,6 +225,208 @@ GLuint MaterialSystem::LoadTexture(const std::string& path, bool srgb) {
         return 0;
     }
 
+    // Check if this is a VTF file
+    std::string ext = std::filesystem::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    
+        if (ext == ".vtf") {
+            // Use VTF loader
+            VTFLoader loader;
+            if (!loader.LoadFromFile(path)) {
+                Logger::Warn("MaterialSystem: Failed to load VTF texture: " + path);
+                return 0;
+            }
+            
+            int width = 0, height = 0;
+            
+            // Check if this is a compressed texture
+            if (loader.IsCompressed()) {
+                // Check if DXT compression is supported
+                if (IsDXTSupported()) {
+                    // Use compressed texture upload
+                    uint32_t glInternalFormat = 0;
+                    size_t dataSize = 0;
+                    const uint8_t* compressedData = loader.GetCompressedData(&width, &height, &glInternalFormat, &dataSize);
+                    
+                    if (!compressedData || dataSize == 0 || glInternalFormat == 0) {
+                        Logger::Warn("MaterialSystem: VTF loader returned invalid compressed data: " + path);
+                        return 0;
+                    }
+                    
+                    GLuint textureID = 0;
+                    glGenTextures(1, &textureID);
+                    glBindTexture(GL_TEXTURE_2D, textureID);
+                    
+                    // Use glCompressedTexImage2D for compressed formats
+                    glCompressedTexImage2D(GL_TEXTURE_2D, 0, glInternalFormat, width, height, 0, dataSize, compressedData);
+                    
+                    // Upload mipmaps if available in the VTF file
+                    int mipCount = loader.GetMipCount();
+                    if (mipCount > 1) {
+                        for (int mip = 1; mip < mipCount; mip++) {
+                            int mipWidth = std::max(1, width >> mip);
+                            int mipHeight = std::max(1, height >> mip);
+                            size_t mipDataSize = 0;
+                            const uint8_t* mipData = loader.GetMipData(mip, &mipDataSize);
+                            
+                            if (mipData && mipDataSize > 0) {
+                                glCompressedTexImage2D(GL_TEXTURE_2D, mip, glInternalFormat, mipWidth, mipHeight, 0, mipDataSize, mipData);
+                            }
+                        }
+                    }
+                    
+                    // Set texture parameters based on VTF flags
+                    uint32_t flags = loader.GetFlags();
+                    
+                    // Wrap mode
+                    if (flags & static_cast<uint32_t>(VTFFlags::CLAMPS)) {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    } else {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                    }
+                    
+                    if (flags & static_cast<uint32_t>(VTFFlags::CLAMPT)) {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                    } else {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                    }
+                    
+                    // Filter mode
+                    if (flags & static_cast<uint32_t>(VTFFlags::POINTSAMPLE)) {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                    } else {
+                        // Use mipmaps if available, otherwise fall back to GL_LINEAR
+                        if (mipCount > 1) {
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                        } else {
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        }
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    }
+                    
+                    // Anisotropic filtering
+                    if (flags & static_cast<uint32_t>(VTFFlags::ANISOTROPIC)) {
+                        float maxAniso = 0.0f;
+                        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 
+                                      static_cast<GLint>(maxAniso));
+                    }
+                    
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                    Logger::Info("MaterialSystem: Loaded compressed VTF texture " + path);
+                    return textureID;
+                } else {
+                    // DXT not supported, fall back to decompressed RGBA
+                    Logger::Warn("MaterialSystem: DXT compression not supported, falling back to RGBA for: " + path);
+                    const uint8_t* data = loader.GetRGBAData(&width, &height);
+                    if (!data) {
+                        Logger::Error("MaterialSystem: VTF loader returned no data: " + path);
+                        return 0;
+                    }
+                    
+                    GLuint textureID = 0;
+                    glGenTextures(1, &textureID);
+                    glBindTexture(GL_TEXTURE_2D, textureID);
+                    
+                    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+                    glGenerateMipmap(GL_TEXTURE_2D);
+                    
+                    // Set texture parameters
+                    uint32_t flags = loader.GetFlags();
+                    if (flags & static_cast<uint32_t>(VTFFlags::CLAMPS)) {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                    } else {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                    }
+                    if (flags & static_cast<uint32_t>(VTFFlags::CLAMPT)) {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                    } else {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                    }
+                    if (flags & static_cast<uint32_t>(VTFFlags::POINTSAMPLE)) {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                    } else {
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    }
+                    if (flags & static_cast<uint32_t>(VTFFlags::ANISOTROPIC)) {
+                        float maxAniso = 0.0f;
+                        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, static_cast<GLint>(maxAniso));
+                    }
+                    
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                    Logger::Info("MaterialSystem: Loaded decompressed VTF texture " + path);
+                    return textureID;
+                }
+            } else {
+                // Use uncompressed texture upload
+                const uint8_t* data = loader.GetRGBAData(&width, &height);
+                if (!data) {
+                    Logger::Warn("MaterialSystem: VTF loader returned no data: " + path);
+                    return 0;
+                }
+                
+                // Determine if texture has alpha
+                bool hasAlpha = loader.HasAlpha();
+                
+                GLuint textureID = 0;
+                glGenTextures(1, &textureID);
+                glBindTexture(GL_TEXTURE_2D, textureID);
+                
+                GLenum internalFormat = hasAlpha ? (srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8) : (srgb ? GL_SRGB8 : GL_RGB8);
+                GLenum format = hasAlpha ? GL_RGBA : GL_RGB;
+                
+                glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0,
+                             format, GL_UNSIGNED_BYTE, data);
+                glGenerateMipmap(GL_TEXTURE_2D);
+                
+                // Set texture parameters based on VTF flags
+                uint32_t flags = loader.GetFlags();
+                
+                // Wrap mode
+                if (flags & static_cast<uint32_t>(VTFFlags::CLAMPS)) {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                } else {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                }
+                
+                if (flags & static_cast<uint32_t>(VTFFlags::CLAMPT)) {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                } else {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                }
+                
+                // Filter mode
+                if (flags & static_cast<uint32_t>(VTFFlags::POINTSAMPLE)) {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                } else if (flags & static_cast<uint32_t>(VTFFlags::TRILINEAR)) {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                } else {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                }
+                
+                // Anisotropic filtering
+                if (flags & static_cast<uint32_t>(VTFFlags::ANISOTROPIC)) {
+                    float maxAniso = 0.0f;
+                    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 
+                                  static_cast<GLint>(maxAniso));
+                }
+                
+                glBindTexture(GL_TEXTURE_2D, 0);
+                Logger::Info("MaterialSystem: Loaded VTF texture " + path);
+                return textureID;
+            }
+        }
+    
+    // Standard image loading via stb_image
     int width = 0, height = 0, channels = 0;
     stbi_uc* data = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
     if (!data) {

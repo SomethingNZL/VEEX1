@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <unordered_map>
 #include <mutex>
+#include <fstream>
+#include <sstream>
+#include <iostream>
 
 namespace veex {
 

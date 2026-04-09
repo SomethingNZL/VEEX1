@@ -1,0 +1,7 @@
+HOW TO BUILD.
+
+FOR MACOS:
+	Do make --build build from VEEXWORKSPACE (ROOT)
+WINDOWS:
+	Do goto VEEXWORKSPACE/Build_win
+	make -I

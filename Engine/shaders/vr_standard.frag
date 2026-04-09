@@ -29,7 +29,8 @@ out vec4 FragColor;
 
 void main() {
     vec4 albedo = texture(u_MainTexture, v_TexCoord);
-    if (albedo.a < 0.5) discard;
+    // Note: Removed alpha discard for VTF textures to prevent RGB line artifacts
+    // if (albedo.a < 0.5) discard;
 
     vec3 norm = normalize(v_Normal);
     if (u_HasNormalMap) {

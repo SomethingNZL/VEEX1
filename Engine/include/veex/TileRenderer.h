@@ -28,6 +28,13 @@ struct TileConfig {
     uint32_t maxTilesY = 36;        // Maximum tiles in Y direction (for 1080p with 32px tiles)
     bool     enableTileCulling = true;
     bool     enableLightCulling = true;
+    
+    // ── Performance optimizations ──────────────────────────────────────────────
+    bool     enableHierarchicalZ = true;   // Use Hi-Z for occlusion culling
+    bool     enableEarlyZPass = true;      // Enable early Z pass for opaque geometry
+    bool     usePersistentMapping = false; // Use GL_ARB_buffer_storage
+    uint32_t maxFacesPerTile = 512;        // Limit faces per tile to control memory
+    float    tileDepthThreshold = 0.95f;   // Depth threshold for tile coherency
 };
 
 // ── Screen Tile ───────────────────────────────────────────────────────────────

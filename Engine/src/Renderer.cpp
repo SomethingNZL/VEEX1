@@ -286,8 +286,252 @@ void Renderer::DrawDebugTBN(const BSP&, const Camera&, int, int)
     Logger::Warn("[Renderer] DrawDebugTBN not yet implemented.");
 }
 
+// ── G-Buffer Operations ───────────────────────────────────────────────────────
+
+void Renderer::CreateGBuffer(int width, int height)
+{
+    if (m_gBufferFBO) {
+        DestroyGBuffer();
+    }
+
+    m_gBufferWidth = width;
+    m_gBufferHeight = height;
+
+    // ── Create FBO ────────────────────────────────────────────────────────────
+    glGenFramebuffers(1, &m_gBufferFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_gBufferFBO);
+
+    // ── Position texture (RGBA32F) ────────────────────────────────────────────
+    glGenTextures(1, &m_gBufferPosition);
+    glBindTexture(GL_TEXTURE_2D, m_gBufferPosition);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_gBufferPosition, 0);
+
+    // ── Normal + roughness texture (RGBA8) ────────────────────────────────────
+    glGenTextures(1, &m_gBufferNormal);
+    glBindTexture(GL_TEXTURE_2D, m_gBufferNormal);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, m_gBufferNormal, 0);
+
+    // ── Albedo + metallic texture (RGBA8) ─────────────────────────────────────
+    glGenTextures(1, &m_gBufferAlbedo);
+    glBindTexture(GL_TEXTURE_2D, m_gBufferAlbedo);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, m_gBufferAlbedo, 0);
+
+    // ── Lightmap radiance texture (RGBA16F) ───────────────────────────────────
+    glGenTextures(1, &m_gBufferLightmap);
+    glBindTexture(GL_TEXTURE_2D, m_gBufferLightmap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, m_gBufferLightmap, 0);
+
+    // ── Depth-stencil attachment ──────────────────────────────────────────────
+    glGenTextures(1, &m_gBufferDepth);
+    glBindTexture(GL_TEXTURE_2D, m_gBufferDepth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, width, height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, m_gBufferDepth, 0);
+
+    // ── Set up draw buffers ───────────────────────────────────────────────────
+    GLenum drawBuffers[] = {
+        GL_COLOR_ATTACHMENT0,  // Position
+        GL_COLOR_ATTACHMENT1,  // Normal + roughness
+        GL_COLOR_ATTACHMENT2,  // Albedo + metallic
+        GL_COLOR_ATTACHMENT3   // Lightmap radiance
+    };
+    glDrawBuffers(4, drawBuffers);
+
+    // ── Check completeness ────────────────────────────────────────────────────
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        Logger::Error("[Renderer] G-Buffer FBO is incomplete!");
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    Logger::Info("[Renderer] G-Buffer created: " + std::to_string(width) + "x" + std::to_string(height));
+}
+
+void Renderer::ResizeGBuffer(int width, int height)
+{
+    if (m_gBufferWidth == width && m_gBufferHeight == height) {
+        return;  // No resize needed
+    }
+    DestroyGBuffer();
+    CreateGBuffer(width, height);
+}
+
+void Renderer::DestroyGBuffer()
+{
+    if (m_gBufferFBO) {
+        glDeleteFramebuffers(1, &m_gBufferFBO);
+        m_gBufferFBO = 0;
+    }
+    if (m_gBufferPosition) {
+        glDeleteTextures(1, &m_gBufferPosition);
+        m_gBufferPosition = 0;
+    }
+    if (m_gBufferNormal) {
+        glDeleteTextures(1, &m_gBufferNormal);
+        m_gBufferNormal = 0;
+    }
+    if (m_gBufferAlbedo) {
+        glDeleteTextures(1, &m_gBufferAlbedo);
+        m_gBufferAlbedo = 0;
+    }
+    if (m_gBufferLightmap) {
+        glDeleteTextures(1, &m_gBufferLightmap);
+        m_gBufferLightmap = 0;
+    }
+    if (m_gBufferDepth) {
+        glDeleteTextures(1, &m_gBufferDepth);
+        m_gBufferDepth = 0;
+    }
+    m_gBufferWidth = 0;
+    m_gBufferHeight = 0;
+}
+
+void Renderer::DrawGBufferPass(const BSP& map, const Camera& camera, int width, int height)
+{
+    // Bind G-Buffer FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, m_gBufferFBO);
+    glViewport(0, 0, width, height);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CW);
+
+    // Use the main BSP shader (which writes to G-buffer when in deferred mode)
+    m_bspShader.Bind();
+    
+    // Set up scene data
+    SceneParams scene{};
+    const float aspect = (height > 0) ? (float)width / (float)height : 1.0f;
+    scene.viewProj = camera.GetProjectionMatrix(aspect) * camera.GetViewMatrix();
+    scene.cameraPos = glm::vec4(camera.GetPosition(), 1.0f);
+    scene.sunDirection = glm::vec4(map.GetSun().direction, 0.0f);
+    scene.sunColor = glm::vec4(map.GetSun().color, 1.0f);
+    scene.fogParams = glm::vec4(500.0f, 4000.0f, 0.01f, 0.0f);
+    scene.fogColor = glm::vec4(0.20f, 0.20f, 0.25f, 1.0f);
+    scene.time = static_cast<float>(glfwGetTime());
+    scene.lightmapExposure = 2.0f;
+
+    m_bspShader.UploadSceneBlock(m_sceneUBO, scene);
+    m_bspShader.SetMat4("u_Model", glm::value_ptr(glm::mat4(1.0f)));
+    glm::mat3 normalMatrix = glm::mat3(1.0f);
+    m_bspShader.SetMat3("u_NormalMatrix", glm::value_ptr(normalMatrix));
+
+    // Bind samplers
+    m_bspShader.BindSampler("u_MainTexture", 0);
+    m_bspShader.BindSampler("u_LightmapTexture", 1);
+    m_bspShader.BindSampler("u_RoughnessTexture", 2);
+    m_bspShader.BindSampler("u_MetallicTexture", 3);
+    m_bspShader.BindSampler("u_NormalTexture", 4);
+    m_bspShader.BindSampler("u_EmissiveTexture", 5);
+    m_bspShader.BindSampler("u_SpecMaskTexture", 6);
+
+    // Bind lightmap atlas
+    const uint32_t lmAtlas = map.GetParser().GetLightmapAtlasID();
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, lmAtlas ? lmAtlas : m_fallbackLightmap);
+
+    // Draw batches
+    glBindVertexArray(m_vao);
+    for (const auto& batch : map.GetBatches()) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, batch.textureID() ? batch.textureID() : m_fallbackAlbedo);
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, batch.roughnessID() ? batch.roughnessID() : m_roughnessDefault);
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, batch.metallicID() ? batch.metallicID() : m_metallicDefault);
+
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, batch.normalID() ? batch.normalID() : m_normalDefault);
+
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, batch.key.emissiveID ? batch.key.emissiveID : m_emissiveDefault);
+
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, batch.key.specMaskID ? batch.key.specMaskID : m_specMaskDefault);
+
+        MaterialParams mp;
+        mp.roughness = batch.matParams.roughness;
+        mp.metallic = batch.matParams.metallic;
+        mp.emissiveScale = batch.matParams.emissiveScale;
+        mp.hasNormalMap = batch.normalID() ? true : false;
+        mp.hasRoughnessMap = batch.roughnessID() ? true : false;
+        mp.hasMetallicMap = batch.metallicID() ? true : false;
+        mp.hasSpecMaskMap = batch.key.specMaskID ? true : false;
+        mp.hasEmissiveMap = batch.key.emissiveID ? true : false;
+        mp.rnmScale = 1.0f;
+        mp.lightmapSoftness = 0.5f;
+        mp.diffuseFlattening = 0.5f;
+        mp.edgePower = 2.0f;
+        mp.geometricRoughnessPower = 4.0f;
+        mp.lightmapBrightness = 4.0f;
+
+        m_bspShader.UploadMaterialParams(mp);
+        glDrawArrays(GL_TRIANGLES, static_cast<GLint>(batch.offset), static_cast<GLsizei>(batch.count));
+    }
+
+    glBindVertexArray(0);
+    m_bspShader.Unbind();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Renderer::DrawLightingPass(int width, int height)
+{
+    // For now, just blit the G-buffer albedo to screen
+    // Full deferred lighting will be implemented with the lighting shader
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, width, height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Simple fullscreen quad to display G-buffer albedo
+    // This is a placeholder - full lighting pass will use the lighting shader
+    glDisable(GL_DEPTH_TEST);
+    // TODO: Implement fullscreen quad rendering with lighting shader
+    glEnable(GL_DEPTH_TEST);
+}
+
+void Renderer::DrawSkyboxToGBuffer(Skybox& skybox, const Camera& camera, int width, int height)
+{
+    // Skybox is typically rendered separately or to a special G-buffer attachment
+    // For now, this is a placeholder for future implementation
+    (void)skybox;
+    (void)camera;
+    (void)width;
+    (void)height;
+}
+
 void Renderer::Shutdown()
 {
+    // Clean up G-buffer first
+    DestroyGBuffer();
+
     if (m_sceneUBO) glDeleteBuffers(1, &m_sceneUBO);
     if (m_vao)      glDeleteVertexArrays(1, &m_vao);
     if (m_vbo)      glDeleteBuffers(1, &m_vbo);

@@ -49,6 +49,16 @@ public:
     void DrawDebugTBN(const BSP& map, const Camera& camera,
                       int width, int height);
 
+    // ── Render Mode Control ───────────────────────────────────────────────────
+    enum class RenderMode {
+        Forward,        // Traditional forward rendering
+        Deferred,       // Deferred rendering with G-buffer
+        ForwardPlus     // Forward+ with tile-based light culling
+    };
+    
+    void SetRenderMode(RenderMode mode) { m_renderMode = mode; }
+    RenderMode GetRenderMode() const { return m_renderMode; }
+
 private:
     // Orchestration
     void BuildGraph(int width, int height, const Camera& camera, 
@@ -58,6 +68,14 @@ private:
     // Internal Draw Logic
     void DrawMapInternal(const BSP& map, const Camera& camera, 
                          int width, int height);
+    
+    // ── G-Buffer Operations (Deferred Rendering) ──────────────────────────────
+    void CreateGBuffer(int width, int height);
+    void ResizeGBuffer(int width, int height);
+    void DestroyGBuffer();
+    void DrawGBufferPass(const BSP& map, const Camera& camera, int width, int height);
+    void DrawLightingPass(int width, int height);
+    void DrawSkyboxToGBuffer(Skybox& skybox, const Camera& camera, int width, int height);
 
     // ── GL objects ────────────────────────────────────────────────────────────
     uint32_t m_vao              = 0;
@@ -73,14 +91,28 @@ private:
     uint32_t m_specMaskDefault  = 0;   // 1x1 combined specmask fallback
     int      m_currentVertexCount = 0;
 
+    // ── G-Buffer Resources ────────────────────────────────────────────────────
+    uint32_t m_gBufferFBO       = 0;
+    uint32_t m_gBufferPosition  = 0;   // RGBA32F - World position
+    uint32_t m_gBufferNormal    = 0;   // RGBA8 - Normal + roughness
+    uint32_t m_gBufferAlbedo    = 0;   // RGBA8 - Albedo + metallic
+    uint32_t m_gBufferLightmap  = 0;   // RGBA16F - Lightmap radiance
+    uint32_t m_gBufferDepth     = 0;   // Depth24Stencil8
+    int      m_gBufferWidth     = 0;
+    int      m_gBufferHeight    = 0;
+
     // ── Render Graph ──────────────────────────────────────────────────────────
     std::vector<RenderPass> m_renderGraph;
 
     // ── ShaderKit Programs ────────────────────────────────────────────────────
     Shader m_bspShader;        // Main world / PBR shader
+    Shader m_lightingShader;   // Deferred lighting pass shader
     
     // ── Tile-based Rendering ──────────────────────────────────────────────────
     TileRenderer m_tileRenderer;
+    
+    // ── Render Mode ───────────────────────────────────────────────────────────
+    RenderMode m_renderMode = RenderMode::Forward;
 };
 
 } // namespace veex

@@ -148,7 +148,13 @@ void Renderer::BuildGraph(int width, int height, const Camera& camera, const BSP
 
     // ── Initialize tile renderer if needed ────────────────────────────────────
     if (width > 0 && height > 0) {
-        m_tileRenderer.Initialize(width, height);
+        // Only reinitialize if viewport size changed
+        static int lastWidth = 0, lastHeight = 0;
+        if (lastWidth != width || lastHeight != height) {
+            m_tileRenderer.Initialize(width, height);
+            lastWidth = width;
+            lastHeight = height;
+        }
         m_tileRenderer.UpdateTiles(camera, map);
     }
 

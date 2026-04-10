@@ -321,6 +321,69 @@ void Shader::UploadMaterialParams(const MaterialParams& mat)
     SetFloat("u_LightmapBrightness",    mat.lightmapBrightness);
 }
 
+// ── Feature-based shader selection ──────────────────────────────────────────────
+// Determines the appropriate shader feature flags based on material properties.
+// This enables per-face shader selection for optimal rendering.
+
+uint32_t Shader::GetShaderFeaturesForMaterial(const std::string& materialName,
+                                               bool hasNormalMap,
+                                               bool hasLightmap,
+                                               bool isTranslucent,
+                                               bool isSky,
+                                               bool isWater)
+{
+    uint32_t flags = SHADER_FEATURE_NONE;
+
+    // ── Base features ───────────────────────────────────────────────────────────
+    // All world geometry gets fog by default
+    flags |= SHADER_FEATURE_FOG;
+
+    // ── Material-specific features ──────────────────────────────────────────────
+    if (hasNormalMap) {
+        flags |= SHADER_FEATURE_NORMAL_MAP;
+    }
+
+    if (hasLightmap) {
+        flags |= SHADER_FEATURE_LIGHTMAP;
+    }
+
+    // ── Special material types ──────────────────────────────────────────────────
+    if (isTranslucent) {
+        flags |= SHADER_FEATURE_TRANSLUCENT | SHADER_FEATURE_ALPHA_TEST;
+    }
+
+    if (isSky) {
+        // Sky materials use envmap and don't need lightmaps
+        flags |= SHADER_FEATURE_ENVMAP;
+        flags &= ~SHADER_FEATURE_LIGHTMAP;
+        flags &= ~SHADER_FEATURE_FOG;
+    }
+
+    if (isWater) {
+        flags |= SHADER_FEATURE_REFRACTION | SHADER_FEATURE_TRANSLUCENT;
+        flags |= SHADER_FEATURE_ENVMAP;
+    }
+
+    // ── PBR-lite: Always enable for world geometry ──────────────────────────────
+    // The hybrid RNM + Source lightmap model is our base shading approach
+    flags |= SHADER_FEATURE_PBR;
+
+    // ── Material name heuristics (Source Engine style) ──────────────────────────
+    // Check material name for common patterns
+    if (materialName.find("metal") != std::string::npos ||
+        materialName.find("chrome") != std::string::npos ||
+        materialName.find("steel") != std::string::npos) {
+        flags |= SHADER_FEATURE_SPECULAR;
+    }
+
+    if (materialName.find("glass") != std::string::npos ||
+        materialName.find("window") != std::string::npos) {
+        flags |= SHADER_FEATURE_TRANSLUCENT | SHADER_FEATURE_REFRACTION;
+    }
+
+    return flags;
+}
+
 // ── Uniform location cache ────────────────────────────────────────────────────
 
 int Shader::GetUniformLocation(const std::string& name)

@@ -128,6 +128,16 @@ public:
     void Bind()   const;
     void Unbind() const;
 
+    // ── Feature-based shader selection ────────────────────────────────────────
+    // Get the appropriate shader for a material based on its properties.
+    // This enables per-face shader selection based on material features.
+    static uint32_t GetShaderFeaturesForMaterial(const std::string& materialName,
+                                                  bool hasNormalMap,
+                                                  bool hasLightmap,
+                                                  bool isTranslucent,
+                                                  bool isSky,
+                                                  bool isWater);
+
     // ── Sampler units ────────────────────────────────────────────────────────
     // Sets the sampler uniform to the given texture-unit index.
     // Callers should never pass raw GL unit indices elsewhere.

@@ -25,6 +25,7 @@ uniform float u_LightmapSoftness;               // Lightmap directional softness
 uniform float u_DiffuseFlattening;              // Diffuse flattening for rough surfaces (default: 0.5)
 uniform float u_EdgePower;                      // Edge term power (default: 2.0)
 uniform float u_GeometricRoughnessPower;        // Curvature sensitivity (default: 4.0)
+uniform float u_LightmapBrightness;             // Lightmap brightness multiplier (default: 1.0)
 
 layout (std140) uniform SceneBlock {
     mat4 u_ViewProj;
@@ -167,14 +168,16 @@ void main() {
     vec3 H = normalize(lightDir + V);
     
     // ── 5. BAKED COMPONENT (Lightmap only) ─────────────────────────────────
-    // C_baked = LM * A * (1 - R_eff * lightmapSoftness)
+    // C_baked = LM * A * brightness * exposure * (1 - R_eff * lightmapSoftness)
     // Lightmaps should NOT be touched by RNM - RNM is for PBR-lite components only
     vec3 bakedColor = vec3(0.0);
     #ifdef ENABLE_LIGHTMAPS
         vec3 lm = vec3(0.0);
         if (v_LMCoord.x >= 0.0 && v_LMCoord.y >= 0.0 &&
             v_LMCoord.x <= 1.001 && v_LMCoord.y <= 1.001) {
-            lm = texture(u_LightmapTexture, clamp(v_LMCoord, 0.0, 1.0)).rgb * scene.u_LMExposure;
+            lm = texture(u_LightmapTexture, clamp(v_LMCoord, 0.0, 1.0)).rgb;
+            // Apply exposure and brightness adjustments
+            lm *= scene.u_LMExposure * u_LightmapBrightness;
         }
         
         // Directional softness factor: rough surfaces scatter lightmap more

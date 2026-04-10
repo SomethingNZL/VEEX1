@@ -195,7 +195,7 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
     scene.fogParams     = glm::vec4(500.0f, 4000.0f, 0.01f, 0.0f);
     scene.fogColor      = glm::vec4(0.20f, 0.20f, 0.25f, 1.0f);
     scene.time          = static_cast<float>(glfwGetTime());
-    scene.lightmapExposure = 1.0f;
+    scene.lightmapExposure = 2.0f;  // Source-style overbright exposure
 
     // ── 2. Bind Shader and Upload Global State ────────────────────────────────
     m_bspShader.Bind();
@@ -257,6 +257,7 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
         mp.diffuseFlattening     = 0.5f;   // Diffuse flattening for rough surfaces
         mp.edgePower             = 2.0f;   // Edge term power (grazing angle control)
         mp.geometricRoughnessPower = 4.0f; // Curvature sensitivity for geometric roughness fallback
+        mp.lightmapBrightness    = 4.0f;   // Lightmap brightness multiplier (Source-style overbright)
 
         m_bspShader.UploadMaterialParams(mp);
         glDrawArrays(GL_TRIANGLES,

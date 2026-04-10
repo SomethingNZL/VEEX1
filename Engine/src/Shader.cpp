@@ -318,6 +318,7 @@ void Shader::UploadMaterialParams(const MaterialParams& mat)
     SetFloat("u_DiffuseFlattening",     mat.diffuseFlattening);
     SetFloat("u_EdgePower",             mat.edgePower);
     SetFloat("u_GeometricRoughnessPower", mat.geometricRoughnessPower);
+    SetFloat("u_LightmapBrightness",    mat.lightmapBrightness);
 }
 
 // ── Uniform location cache ────────────────────────────────────────────────────

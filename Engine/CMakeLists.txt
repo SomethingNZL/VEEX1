@@ -53,8 +53,9 @@ add_executable(${ENGINE_NAME}
     src/Client.cpp
     src/Config.cpp
     src/KeyValues.cpp
-    Src/FileSystem.cpp
+    src/FileSystem.cpp
     src/GameInfo.cpp
+    src/VPK.cpp
     src/Shader.cpp
     src/Camera.cpp
     src/Renderer.cpp
@@ -63,13 +64,13 @@ add_executable(${ENGINE_NAME}
     src/stb_impl.cpp
     src/Texture.cpp
     src/VTFLoader.cpp     # VTF texture format support
-    Src/BSPParser.cpp
-    Src/MaterialSystem.cpp
+    src/BSPParser.cpp
+    src/MaterialSystem.cpp
     src/EntityParser.cpp
     src/Skybox.cpp
     src/PlayerController.cpp
     src/PropStaticEntity.cpp
-    Src/BinfoParser.cpp
+    src/BinfoParser.cpp
     src/SoundKit.cpp
     src/AmbientGeneric.cpp
     src/miniaudio_impl.cpp  # <--- Add implementation file here
@@ -130,3 +131,33 @@ find_package(glm REQUIRED)
 target_include_directories(${ENGINE_NAME} PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm"
 )
+
+# Test executable for GameInfo and VPK testing
+add_executable(GameInfoTest
+    src/test_gameinfo.cpp
+    src/GameInfo.cpp
+    src/FileSystem.cpp
+    src/VPK.cpp
+    src/KeyValues.cpp
+    src/Config.cpp
+)
+
+target_include_directories(GameInfoTest PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+    "${GLAD_DIR}/include"
+    "${MIKKT_DIR}"
+    "${MINIAUDIO_DIR}"
+    "${VTFPARSER_DIR}"
+)
+
+target_link_libraries(GameInfoTest PRIVATE
+    VTFParser glad glfw OpenGL::GL glm::glm
+)
+
+if(APPLE)
+    target_link_libraries(GameInfoTest PRIVATE "-framework CoreAudio" "-framework CoreFoundation" "-framework AudioUnit")
+    target_compile_definitions(GameInfoTest PRIVATE PLATFORM_MACOS GL_SILENCE_DEPRECATION)
+elseif(WIN32)
+    target_link_libraries(GameInfoTest PRIVATE winmm ole32)
+endif()

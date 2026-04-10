@@ -121,6 +121,7 @@ struct RenderBatch {
         float emissiveScale    = 1.0f;
         float refractionScale  = 0.05f;
         float envmapTint       = 1.0f;
+        float lightmapBrightness = 1.0f;  // Lightmap brightness multiplier
         bool  hasNormalMap     = false;
         bool  hasRoughnessMap  = false;
         bool  hasMetallicMap   = false;

@@ -77,6 +77,7 @@ struct MaterialParams {
     float diffuseFlattening     = 0.5f;   // Diffuse flattening for rough surfaces
     float edgePower             = 2.0f;   // Edge term power (grazing angle control)
     float geometricRoughnessPower = 4.0f; // Curvature sensitivity for geometric roughness fallback
+    float lightmapBrightness    = 1.0f;   // Lightmap brightness multiplier
 };
 
 // ── SceneParams ───────────────────────────────────────────────────────────────

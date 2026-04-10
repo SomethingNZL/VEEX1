@@ -1,5 +1,43 @@
-gameName=VEEXSample
-gamePath=./Game
-textures=./Game/textures
-models=./Game/models
-maps=./Game/maps
+// Source Engine style gameinfo.txt for VEEX
+"gameinfo"
+{
+	// Game Information
+	"game"			"VEEXSample"
+	"title"			"VEEX Sample Game"
+	"title2"		"Sample Project"
+	"developer"		"Bradley"
+	"developer_url"	"https://github.com/SomethingNZL/VEEX1"
+	"version"		"1.0"
+	"type"			"singleplayer_only"
+	"secure"		"0"
+	
+	// Steam Integration
+	"SteamAppId"	"0"
+	"ToolsAppId"	"0"
+	"GameAppId"		"0"
+	
+	// File System
+	"FileSystem"
+	{
+		"SearchPaths"
+		{
+			// VPK archives (highest priority)
+			"|gameinfo_path|Game.vpk"
+			
+			// Regular directories
+			"|gameinfo_path|Game"
+			"|gameinfo_path|Game/textures"
+			"|gameinfo_path|Game/models"
+			"|gameinfo_path|Game/maps"
+		}
+	}
+	
+	// Game Configuration
+	"gameDir"		"Game"
+	"startmap"		"testmap"
+	
+	// Optional settings
+	"nodefaultgamedir"	"0"
+	"nohunters"			"0"
+	"nomodels"			"0"
+}

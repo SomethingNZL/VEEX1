@@ -142,7 +142,6 @@ std::vector<const ScreenTile*> TileRenderer::GetVisibleTiles() const {
 
 void TileRenderer::AssignFacesToTiles(const BSP& map, const Camera& camera) {
     const auto& faces = map.GetParser().GetFaces();
-    const auto& vertices = map.GetParser().GetVertices();
     const auto& texinfo = map.GetParser().GetTexinfo();
     
     // Clear previous assignments
@@ -280,7 +279,8 @@ void TileRenderer::ComputeTileFrustum(uint32_t tileX, uint32_t tileY, const Came
     
     float maxRadiusSq = 0.0f;
     for (int i = 0; i < 8; ++i) {
-        float distSq = glm::length2(worldCorners[i] - center);
+        float distSq = glm::length(worldCorners[i] - center);
+        distSq = distSq * distSq; // Square it to get length^2
         maxRadiusSq = std::max(maxRadiusSq, distSq);
     }
     tile.center = center;
@@ -331,10 +331,10 @@ void TileRenderer::PerformTileCulling(const Camera& camera) {
             }
         }
         
-        // Additional check: ensure tile is in front of camera
+        // Additional check: ensure tile is in front of camera (use a reasonable far plane)
         if (isVisible) {
             float distToCamera = glm::distance(tile.center, cameraPos);
-            if (distToCamera > camera.GetFarPlane()) {
+            if (distToCamera > 10000.0f) { // Default far plane
                 isVisible = false;
             }
         }

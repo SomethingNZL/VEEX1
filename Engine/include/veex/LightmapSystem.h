@@ -4,11 +4,14 @@
 // multi-resolution support, streaming, and compression.
 
 #include "veex/Common.h"
+#include "veex/BSPParser.h"  // Include for ColorRGBExp32
 #include <glm/glm.hpp>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <memory>
+#include <cstdint>
 
 namespace veex {
 
@@ -80,7 +83,7 @@ private:
     // ── Internal Helpers ──────────────────────────────────────────────────────
     void Clear();
     bool AllocateAtlas(int width, int height);
-    bool PackFaces(const BSPParser& parser);
+    bool PackFaces(const std::vector<LightmapFaceData>& faceDataList);
     bool UploadToGPU(const std::vector<glm::vec3>& atlasData);
     glm::vec3 DecodeLightmapSample(const ColorRGBExp32& sample) const;
     
@@ -96,7 +99,7 @@ private:
     std::vector<glm::vec3> m_atlasPixels;
     
     // Compression settings
-    int m_compressionFormat = GL_RGB8;  // Default to uncompressed RGB8
+    int m_compressionFormat = 0x1908;  // GL_RGB8 equivalent
     bool m_useMipmaps = false;
     
     // Statistics

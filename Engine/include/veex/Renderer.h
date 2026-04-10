@@ -6,6 +6,7 @@
 
 #include "veex/Common.h"
 #include "veex/Shader.h"
+#include "veex/TileRenderer.h"
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -77,6 +78,9 @@ private:
 
     // ── ShaderKit Programs ────────────────────────────────────────────────────
     Shader m_bspShader;        // Main world / PBR shader
+    
+    // ── Tile-based Rendering ──────────────────────────────────────────────────
+    TileRenderer m_tileRenderer;
 };
 
 } // namespace veex

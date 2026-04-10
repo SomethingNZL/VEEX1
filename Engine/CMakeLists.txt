@@ -74,6 +74,8 @@ add_executable(${ENGINE_NAME}
     src/SoundKit.cpp
     src/AmbientGeneric.cpp
     src/miniaudio_impl.cpp  # <--- Add implementation file here
+    src/TileRenderer.cpp    # <--- Add TileRenderer implementation
+    src/LightmapSystem.cpp  # <--- Add LightmapSystem implementation
     "${MIKKT_DIR}/mikktspace.c"
 )
 

@@ -146,6 +146,12 @@ void Renderer::BuildGraph(int width, int height, const Camera& camera, const BSP
 {
     m_renderGraph.clear();
 
+    // ── Initialize tile renderer if needed ────────────────────────────────────
+    if (width > 0 && height > 0) {
+        m_tileRenderer.Initialize(width, height);
+        m_tileRenderer.UpdateTiles(camera, map);
+    }
+
     // ── PASS: Opaque World ────────────────────────────────────────────────────
     m_renderGraph.push_back({ "OpaqueWorld", [=, &camera, &map]() {
         glViewport(0, 0, width, height);

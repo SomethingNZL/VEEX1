@@ -10,6 +10,7 @@
 #include "veex/Camera.h"
 #include "veex/Skybox.h"
 #include "veex/GameInfo.h"
+#include "veex/GUI.h"
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -85,12 +86,6 @@ bool Renderer::Init(const GameInfo& game)
     glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, lmCoord));
     glEnableVertexAttribArray(4); // Tangent
     glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, tangent));
-    glEnableVertexAttribArray(5); // RNM Radiosity U
-    glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, rnmU));
-    glEnableVertexAttribArray(6); // RNM Radiosity V
-    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, rnmV));
-    glEnableVertexAttribArray(7); // RNM Radiosity N
-    glVertexAttribPointer(7, 3, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(Vertex, rnmN));
 
     glBindVertexArray(0);
 
@@ -179,6 +174,8 @@ void Renderer::BuildGraph(int width, int height, const Camera& camera, const BSP
     // ── PASS: Debug Overlays ──────────────────────────────────────────────────
     m_renderGraph.push_back({ "DebugUI", [=, &camera, &map]() {
         // Reserved for ImGui or DrawDebugTBN
+        (void)camera;
+        (void)map;
     }});
 }
 
@@ -224,6 +221,7 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
     m_bspShader.BindSampler("u_NormalTexture",    4);
     m_bspShader.BindSampler("u_EmissiveTexture",  5);
     m_bspShader.BindSampler("u_SpecMaskTexture",  6);
+    m_bspShader.BindSampler("u_DetailTexture",    7);
 
     // ── 3. Bind Shared Assets ─────────────────────────────────────────────────
     const uint32_t lmAtlas = map.GetParser().GetLightmapAtlasID();
@@ -251,6 +249,10 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
         glActiveTexture(GL_TEXTURE6);
         glBindTexture(GL_TEXTURE_2D, batch.key.specMaskID ? batch.key.specMaskID : m_specMaskDefault);
 
+        // Bind detail texture (from VMT)
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_2D, batch.key.detailID ? batch.key.detailID : 0);
+
         MaterialParams mp;
         mp.roughness       = batch.matParams.roughness;
         mp.metallic        = batch.matParams.metallic;
@@ -260,6 +262,7 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
         mp.hasMetallicMap  = batch.metallicID() ? true : false;
         mp.hasSpecMaskMap  = batch.key.specMaskID ? true : false;
         mp.hasEmissiveMap  = batch.key.emissiveID ? true : false;
+        mp.hasDetail       = batch.key.detailID ? true : false;
 
         // ── PBR-lite tuning parameters ─────────────────────────────────────────────
         // Set default values for the hybrid RNM + Source lightmap shading model.
@@ -270,6 +273,12 @@ void Renderer::DrawMapInternal(const BSP& map, const Camera& camera, int width, 
         mp.edgePower             = 2.0f;   // Edge term power (grazing angle control)
         mp.geometricRoughnessPower = 4.0f; // Curvature sensitivity for geometric roughness fallback
         mp.lightmapBrightness    = 4.0f;   // Lightmap brightness multiplier (Source-style overbright)
+
+        // ── VMT Material Parameters ──────────────────────────────────────────────
+        // Set detail texture parameters from VMT
+        mp.detailScale       = batch.matParams.detailScale;
+        mp.detailBlendFactor = batch.matParams.detailBlendFactor;
+        mp.detailBlendMode   = batch.matParams.detailBlendMode;
 
         m_bspShader.UploadMaterialParams(mp);
         glDrawArrays(GL_TRIANGLES,
@@ -532,18 +541,32 @@ void Renderer::Shutdown()
     // Clean up G-buffer first
     DestroyGBuffer();
 
-    if (m_sceneUBO) glDeleteBuffers(1, &m_sceneUBO);
-    if (m_vao)      glDeleteVertexArrays(1, &m_vao);
-    if (m_vbo)      glDeleteBuffers(1, &m_vbo);
+    // Add NULL checks to prevent crashes if OpenGL context is invalid
+    if (m_sceneUBO && glad_glDeleteBuffers) glDeleteBuffers(1, &m_sceneUBO);
+    if (m_vao && glad_glDeleteVertexArrays) glDeleteVertexArrays(1, &m_vao);
+    if (m_vbo && glad_glDeleteBuffers) glDeleteBuffers(1, &m_vbo);
     
-    if (m_fallbackAlbedo)   glDeleteTextures(1, &m_fallbackAlbedo);
-    if (m_fallbackLightmap) glDeleteTextures(1, &m_fallbackLightmap);
-    if (m_fallbackNormal)   glDeleteTextures(1, &m_fallbackNormal);
-    if (m_roughnessDefault) glDeleteTextures(1, &m_roughnessDefault);
-    if (m_metallicDefault)  glDeleteTextures(1, &m_metallicDefault);
-    if (m_emissiveDefault)  glDeleteTextures(1, &m_emissiveDefault);
-    if (m_specMaskDefault)  glDeleteTextures(1, &m_specMaskDefault);
-    if (m_normalDefault)    glDeleteTextures(1, &m_normalDefault);
+    if (m_fallbackAlbedo && glad_glDeleteTextures)   glDeleteTextures(1, &m_fallbackAlbedo);
+    if (m_fallbackLightmap && glad_glDeleteTextures) glDeleteTextures(1, &m_fallbackLightmap);
+    if (m_fallbackNormal && glad_glDeleteTextures)   glDeleteTextures(1, &m_fallbackNormal);
+    if (m_roughnessDefault && glad_glDeleteTextures) glDeleteTextures(1, &m_roughnessDefault);
+    if (m_metallicDefault && glad_glDeleteTextures)  glDeleteTextures(1, &m_metallicDefault);
+    if (m_emissiveDefault && glad_glDeleteTextures)  glDeleteTextures(1, &m_emissiveDefault);
+    if (m_specMaskDefault && glad_glDeleteTextures)  glDeleteTextures(1, &m_specMaskDefault);
+    if (m_normalDefault && glad_glDeleteTextures)    glDeleteTextures(1, &m_normalDefault);
+
+    // Reset IDs to prevent double deletion
+    m_sceneUBO = 0;
+    m_vao = 0;
+    m_vbo = 0;
+    m_fallbackAlbedo = 0;
+    m_fallbackLightmap = 0;
+    m_fallbackNormal = 0;
+    m_roughnessDefault = 0;
+    m_metallicDefault = 0;
+    m_emissiveDefault = 0;
+    m_specMaskDefault = 0;
+    m_normalDefault = 0;
 
     Logger::Info("[Renderer] Shutdown complete.");
 }

@@ -64,6 +64,7 @@ add_executable(${ENGINE_NAME}
     src/stb_impl.cpp
     src/Texture.cpp
     src/VTFLoader.cpp     # VTF texture format support
+    src/VMTLoader.cpp     # VMT material format support
     src/BSPParser.cpp
     src/MaterialSystem.cpp
     src/EntityParser.cpp
@@ -76,6 +77,8 @@ add_executable(${ENGINE_NAME}
     src/miniaudio_impl.cpp  # <--- Add implementation file here
     src/TileRenderer.cpp    # <--- Add TileRenderer implementation
     src/LightmapSystem.cpp  # <--- Add LightmapSystem implementation
+    src/GUI.cpp             # <--- Add GUI system implementation
+    src/PauseMenu.cpp       # <--- Add pause menu implementation
     "${MIKKT_DIR}/mikktspace.c"
 )
 

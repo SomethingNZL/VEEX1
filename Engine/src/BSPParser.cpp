@@ -454,121 +454,135 @@ std::unordered_set<int> BSPParser::GetVisibleFaceIndices(const glm::vec3& worldP
     return visFaces;
 }
 
-// ── RNM (Radiosity Normal Maps) ───────────────────────────────────────────────
+// ── Face Info Resolution ──────────────────────────────────────────────────────
 
-// Helper: Decode the compressed ambient cube from leaf ambient lighting data.
-// The ambient cube stores 6 face intensities (±X, ±Y, ±Z) as RGBE values.
-static glm::vec3 DecodeAmbientCubeFace(const uint8_t* data)
-{
-    // Each face is stored as 4 bytes: R, G, B, exponent (same format as lightmaps)
-    ColorRGBExp32 c;
-    c.r = data[0];
-    c.g = data[1];
-    c.b = data[2];
-    c.exponent = static_cast<int8_t>(data[3]);
-    return BSPParser::DecodeRGBExp32(c);
+FaceInfo BSPParser::GetFaceInfo(int faceIndex) const {
+    FaceInfo info;
+
+    if (faceIndex < 0 || faceIndex >= (int)m_faces.size()) {
+        info.shouldRender = false;
+        info.materialType = FaceMaterialType::NoDraw;
+        return info;
+    }
+
+    const dface_t& face = m_faces[faceIndex];
+
+    // Get texinfo flags
+    if (face.texinfo >= 0 && face.texinfo < (int)m_texinfo.size()) {
+        info.surfaceFlags = static_cast<uint32_t>(m_texinfo[face.texinfo].flags);
+    }
+
+    // Get content flags from the leaf this face belongs to
+    // Find which leaf contains this face
+    for (int li = 0; li < (int)m_leaves.size(); ++li) {
+        const dleaf_t& leaf = m_leaves[li];
+        for (int lfi = 0; lfi < leaf.numleaffaces; ++lfi) {
+            int lfIdx = leaf.firstleafface + lfi;
+            if (lfIdx >= 0 && lfIdx < (int)m_leafFaces.size() && m_leafFaces[lfIdx] == faceIndex) {
+                info.contentFlags = static_cast<uint32_t>(leaf.contents);
+                break;
+            }
+        }
+    }
+
+    // Determine face properties from flags
+    info.isSky = (info.surfaceFlags & SURF_SKY) != 0 || (info.surfaceFlags & SURF_SKY2D) != 0;
+    info.isWater = (info.contentFlags & CONTENTS_WATER) != 0;
+    info.isTranslucent = (info.surfaceFlags & SURF_TRANS) != 0;
+    info.isWarp = (info.surfaceFlags & SURF_WARP) != 0;
+    info.hasLightmap = (face.lightofs >= 0 && face.styles[0] != 255);
+    info.castsShadows = (info.surfaceFlags & SURF_NOSHADOWS) == 0;
+    info.receivesDecals = (info.surfaceFlags & SURF_NODECALS) == 0;
+    info.shouldRender = (info.surfaceFlags & SURF_NODRAW) == 0 &&
+                        (info.surfaceFlags & SURF_SKIP) == 0 &&
+                        (info.surfaceFlags & SURF_HINT) == 0;
+
+    // Determine material type
+    if (info.isSky) {
+        info.materialType = FaceMaterialType::Sky;
+    } else if (info.isWater) {
+        info.materialType = FaceMaterialType::Water;
+    } else if (info.isWarp) {
+        info.materialType = FaceMaterialType::Warp;
+    } else if (info.isTranslucent) {
+        info.materialType = FaceMaterialType::Translucent;
+    } else if (!info.shouldRender) {
+        info.materialType = FaceMaterialType::NoDraw;
+    } else {
+        info.materialType = FaceMaterialType::Standard;
+    }
+
+    return info;
 }
 
-void BSPParser::ComputeRNMData()
-{
-    const int numFaces = static_cast<int>(m_faces.size());
-    m_faceRNMData.resize(numFaces);
-
-    if (m_lightingData.empty()) {
-        Logger::Warn("[BSPParser] RNM: no lighting data — RNM computation skipped.");
-        return;
+FaceMaterialType BSPParser::GetFaceMaterialType(int texinfoIndex) const {
+    if (texinfoIndex < 0 || texinfoIndex >= (int)m_texinfo.size()) {
+        return FaceMaterialType::Standard;
     }
 
-    Logger::Info("[BSPParser] RNM: Computing radiosity normal map data for " +
-                 std::to_string(numFaces) + " faces...");
+    uint32_t flags = static_cast<uint32_t>(m_texinfo[texinfoIndex].flags);
 
-    // For each face, compute the average lighting direction and intensity
-    // from the lightmap samples. This is used to build the RNM basis vectors.
-    int validFaces = 0;
-    for (int fi = 0; fi < numFaces; ++fi) {
-        const dface_t& face = m_faces[fi];
-        FaceRNMData& rnm = m_faceRNMData[fi];
-        rnm.valid = false;
+    if (flags & SURF_SKY) return FaceMaterialType::Sky;
+    if (flags & SURF_SKY2D) return FaceMaterialType::Sky;
+    if (flags & SURF_WARP) return FaceMaterialType::Warp;
+    if (flags & SURF_TRANS) return FaceMaterialType::Translucent;
+    if (flags & SURF_NODRAW) return FaceMaterialType::NoDraw;
+    if (flags & SURF_HINT) return FaceMaterialType::Hint;
 
-        // Skip faces without lightmap data
-        if (face.lightofs < 0 || face.styles[0] == 255) continue;
-        if (face.texinfo < 0 || face.texinfo >= (int)m_texinfo.size()) continue;
-        if (m_texinfo[face.texinfo].flags & 0x0080) continue; // SURF_NODRAW
+    return FaceMaterialType::Standard;
+}
 
-        int lw = face.LightmapTextureSizeInLuxels[0] + 1;
-        int lh = face.LightmapTextureSizeInLuxels[1] + 1;
-        if (lw <= 0 || lh <= 0) continue;
+bool BSPParser::ShouldRenderFace(int faceIndex) const {
+    if (faceIndex < 0 || faceIndex >= (int)m_faces.size()) {
+        return false;
+    }
 
-        const int startSample = face.lightofs / static_cast<int>(sizeof(ColorRGBExp32));
-        const int numSamples = lw * lh;
-        if (startSample + numSamples > static_cast<int>(m_lightingData.size())) continue;
+    const dface_t& face = m_faces[faceIndex];
+    if (face.texinfo < 0 || face.texinfo >= (int)m_texinfo.size()) {
+        return false;
+    }
 
-        // Get face normal for building RNM basis
-        glm::vec3 faceNormal = GetFaceNormal(face);
+    uint32_t flags = static_cast<uint32_t>(m_texinfo[face.texinfo].flags);
+    return (flags & SURF_NODRAW) == 0 &&
+           (flags & SURF_SKIP) == 0 &&
+           (flags & SURF_HINT) == 0;
+}
 
-        // Build an orthonormal basis: normal, tangent, bitangent
-        // Use the lightmap U/V directions from texinfo to build tangent/bitangent
-        const texinfo_t& texinfo = m_texinfo[face.texinfo];
-        
-        // Extract lightmap basis vectors from the lightmap texture vectors
-        // These are stored in the texinfo structure
-        glm::vec3 lightmapU(texinfo.lightmapVecs[0][0], texinfo.lightmapVecs[0][1], texinfo.lightmapVecs[0][2]);
-        glm::vec3 lightmapV(texinfo.lightmapVecs[1][0], texinfo.lightmapVecs[1][1], texinfo.lightmapVecs[1][2]);
+const CachedTexInfo& BSPParser::GetCachedTexInfo(int texinfoIndex) const {
+    // Static fallback for invalid indices
+    static CachedTexInfo s_fallback;
 
-        // Normalize to get direction vectors
-        float uLen = glm::length(lightmapU);
-        float vLen = glm::length(lightmapV);
-        if (uLen > 0.001f) lightmapU /= uLen;
-        if (vLen > 0.001f) lightmapV /= vLen;
+    if (texinfoIndex < 0 || texinfoIndex >= (int)m_texinfo.size()) {
+        return s_fallback;
+    }
 
-        // Accumulate lighting samples to compute average radiosity
-        glm::vec3 avgLighting(0.0f);
-        glm::vec3 sumU(0.0f), sumV(0.0f), sumN(0.0f);
+    // Check if we need to expand the cache
+    if (m_cachedTexInfo.empty()) {
+        // Lazy initialization - create cache on first access
+        const_cast<BSPParser*>(this)->m_cachedTexInfo.resize(m_texinfo.size());
+    }
 
-        for (int y = 0; y < lh; ++y) {
-            for (int x = 0; x < lw; ++x) {
-                glm::vec3 hdr = DecodeRGBExp32(m_lightingData[startSample + y * lw + x]);
-                avgLighting += hdr;
+    CachedTexInfo& cached = const_cast<CachedTexInfo&>(m_cachedTexInfo[texinfoIndex]);
 
-                // Project lighting onto RNM basis vectors
-                // The RNM technique stores lighting in 3 orthogonal directions
-                float uComponent = glm::dot(hdr, lightmapU);
-                float vComponent = glm::dot(hdr, lightmapV);
-                float nComponent = glm::dot(hdr, faceNormal);
+    if (!cached.isCached) {
+        // Populate the cache
+        cached.name = GetTextureName(texinfoIndex);
+        cached.dimensions = GetTextureDimensions(texinfoIndex);
+        cached.surfaceFlags = static_cast<uint32_t>(m_texinfo[texinfoIndex].flags);
 
-                sumU += lightmapU * uComponent;
-                sumV += lightmapV * vComponent;
-                sumN += faceNormal * nComponent;
-            }
+        // Get reflectivity from texdata
+        int texdataIdx = m_texinfo[texinfoIndex].texdata;
+        if (texdataIdx >= 0 && texdataIdx < (int)m_texdata.size()) {
+            cached.reflectivity = m_texdata[texdataIdx].reflectivity;
+        } else {
+            cached.reflectivity = glm::vec3(1.0f);
         }
 
-        float invSampleCount = 1.0f / static_cast<float>(numSamples);
-        rnm.radiosityU = sumU * invSampleCount;
-        rnm.radiosityV = sumV * invSampleCount;
-        rnm.radiosityN = sumN * invSampleCount;
-        rnm.valid = true;
-        ++validFaces;
+        cached.materialType = GetFaceMaterialType(texinfoIndex);
+        cached.isCached = true;
     }
 
-    Logger::Info("[BSPParser] RNM: Computed data for " + std::to_string(validFaces) +
-                 "/" + std::to_string(numFaces) + " faces.");
-
-    // Log summary statistics
-    if (validFaces > 0) {
-        glm::vec3 totalRadiosity(0.0f);
-        for (int fi = 0; fi < numFaces; ++fi) {
-            if (m_faceRNMData[fi].valid) {
-                totalRadiosity += m_faceRNMData[fi].radiosityU;
-                totalRadiosity += m_faceRNMData[fi].radiosityV;
-                totalRadiosity += m_faceRNMData[fi].radiosityN;
-            }
-        }
-        totalRadiosity /= static_cast<float>(validFaces * 3);
-        Logger::Info("[BSPParser] RNM: Average radiosity = (" +
-                     std::to_string(totalRadiosity.x) + ", " +
-                     std::to_string(totalRadiosity.y) + ", " +
-                     std::to_string(totalRadiosity.z) + ")");
-    }
+    return cached;
 }
 
 } // namespace veex

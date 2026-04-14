@@ -25,6 +25,7 @@ public:
     void Render(const Server& server, Skybox& skybox);
     void Shutdown();
     void HandleMouseLook(float dt);
+    void ResetMouseTracking(); // Reset mouse tracking to prevent view jump after pause menu
 
     // Getters
     Camera&       GetCamera()           { return m_camera; }

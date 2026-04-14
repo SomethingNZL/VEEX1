@@ -10,6 +10,7 @@
 #include "veex/Logger.h"
 #include "veex/Server.h"
 #include "veex/Skybox.h"
+#include "veex/GUI.h"
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <string>
@@ -132,6 +133,11 @@ void Client::Render(const Server&, Skybox& skybox)
     int width, height;
     glfwGetFramebufferSize(m_window, &width, &height);
     m_renderer.Render(width, height, m_camera, m_currentMap, skybox);
+}
+
+void Client::ResetMouseTracking()
+{
+    m_firstMouse = true;
 }
 
 void Client::Shutdown()

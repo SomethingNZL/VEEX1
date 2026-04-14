@@ -115,9 +115,15 @@ void Skybox::Render(const glm::mat4& view, const glm::mat4& projection) {
 }
 
 void Skybox::Shutdown() {
-    glDeleteVertexArrays(1, &m_vao);
-    glDeleteBuffers(1, &m_vbo);
-    glDeleteTextures(1, &m_textureID);
+    // Add NULL checks to prevent crashes if OpenGL context is invalid
+    if (glad_glDeleteVertexArrays) glDeleteVertexArrays(1, &m_vao);
+    if (glad_glDeleteBuffers) glDeleteBuffers(1, &m_vbo);
+    if (glad_glDeleteTextures) glDeleteTextures(1, &m_textureID);
+    
+    // Reset IDs to prevent double deletion
+    m_vao = 0;
+    m_vbo = 0;
+    m_textureID = 0;
 }
 
 } // namespace veex

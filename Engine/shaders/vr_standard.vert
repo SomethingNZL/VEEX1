@@ -5,12 +5,10 @@ layout (location = 1) in vec3 a_Normal;
 layout (location = 2) in vec2 a_TexCoord;
 layout (location = 3) in vec2 a_LMCoord;
 layout (location = 4) in vec4 a_Tangent;
-layout (location = 5) in vec3 a_RNMU;      // RNM radiosity in tangent direction
-layout (location = 6) in vec3 a_RNMV;      // RNM radiosity in bitangent direction
-layout (location = 7) in vec3 a_RNMN;      // RNM radiosity in normal direction
 
 uniform mat4 u_Model;
 uniform mat3 u_NormalMatrix;
+uniform vec2 u_DetailScale;  // Detail texture scale from VMT $detailscale
 
 layout (std140) uniform SceneBlock {
     mat4 u_ViewProj;
@@ -28,19 +26,20 @@ layout (std140) uniform SceneBlock {
 
 out vec2 v_TexCoord;
 out vec2 v_LMCoord;
+out vec2 v_DetailTexCoord;   // Detail texture coordinates (scaled by $detailscale)
 out vec3 v_Normal;
 out vec3 v_FragPos;
 out mat3 v_TBN;
 out vec3 v_GeometricNormal;    // Face normal for geometric roughness fallback
-out vec3 v_RNMRadiosityU;      // RNM radiosity in tangent direction
-out vec3 v_RNMRadiosityV;      // RNM radiosity in bitangent direction
-out vec3 v_RNMRadiosityN;      // RNM radiosity in normal direction
 
 void main() {
     vec4 worldPos = u_Model * vec4(a_Pos, 1.0);
     v_FragPos = worldPos.xyz;
     v_TexCoord = a_TexCoord;
     v_LMCoord = a_LMCoord;
+    
+    // Detail texture coordinates (scaled by $detailscale)
+    v_DetailTexCoord = a_TexCoord * u_DetailScale;
 
     v_Normal = normalize(u_NormalMatrix * a_Normal);
     vec3 T = normalize(u_NormalMatrix * a_Tangent.xyz);
@@ -49,12 +48,6 @@ void main() {
 
     // Pass geometric normal (face normal) for geometric roughness fallback
     v_GeometricNormal = normalize(u_NormalMatrix * a_Normal);
-    
-    // Pass RNM radiosity data (from vertex attributes 5, 6, 7)
-    // These are the RNM basis vectors computed in BSP.cpp
-    v_RNMRadiosityU = a_RNMU;
-    v_RNMRadiosityV = a_RNMV;
-    v_RNMRadiosityN = a_RNMN;
 
     gl_Position = scene.u_ViewProj * worldPos;
 }

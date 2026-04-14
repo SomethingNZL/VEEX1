@@ -33,6 +33,7 @@ private:
     Skybox m_skybox;
 
     float m_fixedTick = 0.015f; 
+    bool m_escWasPressed = false;
 };
 
 } // namespace veex

@@ -2,30 +2,34 @@
 
 in vec2 v_TexCoord;
 in vec2 v_LMCoord;
+in vec2 v_DetailTexCoord;   // Detail texture coordinate (scaled by $detailscale)
 in vec3 v_Normal;
 in vec3 v_FragPos;
 in mat3 v_TBN;
 in vec3 v_GeometricNormal;    // Face normal for geometric roughness fallback
-in vec3 v_RNMRadiosityU;      // RNM radiosity in tangent direction
-in vec3 v_RNMRadiosityV;      // RNM radiosity in bitangent direction
-in vec3 v_RNMRadiosityN;      // RNM radiosity in normal direction
 
 uniform sampler2D u_MainTexture;
 uniform sampler2D u_LightmapTexture;
 uniform sampler2D u_NormalTexture;
 uniform sampler2D u_RoughnessTexture;
+uniform sampler2D u_DetailTexture;  // $detail texture
 
 uniform bool u_HasNormalMap;
 uniform bool u_HasRoughnessMap;
+uniform bool u_HasDetail;           // Has detail texture
 
 // ── PBR-lite tuning parameters ───────────────────────────────────────────────
 uniform float u_Roughness;                      // Material roughness scalar (0-1)
-uniform float u_RNMScale;                       // RNM sharpness scale (default: 1.0)
 uniform float u_LightmapSoftness;               // Lightmap directional softness (default: 0.5)
 uniform float u_DiffuseFlattening;              // Diffuse flattening for rough surfaces (default: 0.5)
 uniform float u_EdgePower;                      // Edge term power (default: 2.0)
 uniform float u_GeometricRoughnessPower;        // Curvature sensitivity (default: 4.0)
 uniform float u_LightmapBrightness;             // Lightmap brightness multiplier (default: 1.0)
+
+// ── VMT Detail Texture Parameters ──────────────────────────────────────────────
+uniform vec2 u_DetailScale;                     // Detail texture tiling scale
+uniform float u_DetailBlendFactor;              // Detail blend intensity (0-1)
+uniform int u_DetailBlendMode;                  // 0 = multiply, 1 = add, 2 = lerp
 
 layout (std140) uniform SceneBlock {
     mat4 u_ViewProj;
@@ -80,23 +84,6 @@ float GetEffectiveRoughness(vec3 shadedNormal, vec3 geometricNormal) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// RNM (RADIOSITY NORMAL MAPPING)
-// ──────────────────────────────────────────────────────────────────────────────
-// RNM enhances directional response of both baked and dynamic lighting.
-//
-// RNM(N, D) = pow(max(dot(N, D), 0), k)
-// where k = 1 + R_eff * kScale
-//
-// smooth surfaces → sharper directional lighting
-// rough surfaces  → more diffuse spread
-
-float RNM(vec3 normal, vec3 direction, float roughness) {
-    float k = 1.0 + roughness * u_RNMScale;
-    return pow(max(dot(normal, direction), 0.0), k);
-}
-
-
-// ──────────────────────────────────────────────────────────────────────────────
 // FRESNEL (Schlick approximation)
 // ──────────────────────────────────────────────────────────────────────────────
 // F(N,V) = F0 + (1 - F0) * pow(1 - dot(N,V), 5)
@@ -149,7 +136,27 @@ void main() {
     // ── 1. Sample Textures ────────────────────────────────────────────────
     vec4 albedo = texture(u_MainTexture, v_TexCoord);
     
-    // ── 2. Reconstruct Normals ────────────────────────────────────────────
+    // ── 2. Detail Texture Blending ─────────────────────────────────────────
+    if (u_HasDetail) {
+        vec4 detail = texture(u_DetailTexture, v_DetailTexCoord);
+        
+        // Apply detail blend factor
+        float blend = u_DetailBlendFactor;
+        
+        // Blend modes: 0 = multiply, 1 = add, 2 = lerp
+        if (u_DetailBlendMode == 0) {
+            // Multiply blend (common for detail textures)
+            albedo.rgb *= mix(vec3(1.0), detail.rgb, blend);
+        } else if (u_DetailBlendMode == 1) {
+            // Add blend
+            albedo.rgb += detail.rgb * blend;
+        } else {
+            // Lerp blend (default)
+            albedo.rgb = mix(albedo.rgb, detail.rgb, blend);
+        }
+    }
+    
+    // ── 3. Reconstruct Normals ────────────────────────────────────────────
     vec3 geometricNormal = normalize(v_GeometricNormal);   // Face normal
     vec3 shadedNormal = geometricNormal;
     
@@ -159,17 +166,16 @@ void main() {
         shadedNormal = normalize(v_TBN * nMap);
     }
     
-    // ── 3. Compute Effective Roughness ────────────────────────────────────
+    // ── 4. Compute Effective Roughness ────────────────────────────────────
     float R_eff = GetEffectiveRoughness(shadedNormal, geometricNormal);
     
-    // ── 4. View/Light Directions ──────────────────────────────────────────
+    // ── 5. View/Light Directions ──────────────────────────────────────────
     vec3 V = normalize(scene.u_CameraPos.xyz - v_FragPos);
     vec3 lightDir = normalize(-scene.u_SunDirection.xyz);
     vec3 H = normalize(lightDir + V);
     
-    // ── 5. BAKED COMPONENT (Lightmap only) ─────────────────────────────────
+    // ── 6. BAKED COMPONENT (Lightmap only) ─────────────────────────────────
     // C_baked = LM * A * brightness * exposure * (1 - R_eff * lightmapSoftness)
-    // Lightmaps should NOT be touched by RNM - RNM is for PBR-lite components only
     vec3 bakedColor = vec3(0.0);
     #ifdef ENABLE_LIGHTMAPS
         vec3 lm = vec3(0.0);
@@ -183,12 +189,11 @@ void main() {
         // Directional softness factor: rough surfaces scatter lightmap more
         float lmDirectional = 1.0 - R_eff * u_LightmapSoftness;
         
-        // Pure lightmap contribution - no RNM enhancement
+        // Pure lightmap contribution
         bakedColor = lm * albedo.rgb * lmDirectional;
     #endif
     
-    // ── 6. DYNAMIC COMPONENT ──────────────────────────────────────────────
-    // C_dynamic = Σ lights { L_in * [ (1-F)*D*RNM*E + F*S ] }
+    // ── 7. DYNAMIC COMPONENT ──────────────────────────────────────────────
     vec3 dynamicColor = vec3(0.0);
     vec3 F0 = GetF0(0.0, albedo.rgb); // Non-metallic (metallic = 0)
     float NdotV = max(dot(shadedNormal, V), 0.0);
@@ -198,27 +203,23 @@ void main() {
     float NdotL = max(dot(shadedNormal, lightDir), 0.0);
     float diffuseFactor = (1.0 - R_eff * u_DiffuseFlattening);
     
-    // RNM for dynamic lighting - enhance directional response
-    float rnmDynamic = RNM(shadedNormal, lightDir, R_eff);
-    
-    // Specular term: S(N,H,R_eff) - use RNM-enhanced lighting direction
+    // Specular term: S(N,H,R_eff)
     vec3 specular = SpecularBlinnPhong(shadedNormal, H, R_eff, scene.u_SunColor.rgb, NdotL);
     
     // Energy conservation: (1 - F) for diffuse, F for specular
-    // Apply RNM enhancement to both diffuse and specular
-    vec3 diffuseContrib = (1.0 - F) * NdotL * diffuseFactor * rnmDynamic * scene.u_SunColor.rgb;
-    vec3 specularContrib = F * specular * rnmDynamic;
+    vec3 diffuseContrib = (1.0 - F) * NdotL * diffuseFactor * scene.u_SunColor.rgb;
+    vec3 specularContrib = F * specular;
     
     // Edge term for grazing angle control
     float edge = EdgeTerm(shadedNormal, V);
     
     dynamicColor = (diffuseContrib + specularContrib) * edge;
     
-    // ── 7. FINAL COMPOSITION ──────────────────────────────────────────────
+    // ── 8. FINAL COMPOSITION ──────────────────────────────────────────────
     // C = BAKED + DYNAMIC
     vec3 finalColor = bakedColor + dynamicColor * albedo.rgb;
     
-    // ── 8. FOG ────────────────────────────────────────────────────────────
+    // ── 9. FOG ────────────────────────────────────────────────────────────
     #ifdef ENABLE_FOG
         float dist = length(scene.u_CameraPos.xyz - v_FragPos);
         float fogFactor = clamp((scene.u_FogParams.y - dist) / 

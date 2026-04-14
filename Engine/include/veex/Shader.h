@@ -69,6 +69,7 @@ struct MaterialParams {
     bool hasMetallicMap = false;
     bool hasSpecMaskMap = false;
     bool hasEmissiveMap = false;
+    bool hasDetail      = false;   // Has detail texture (from VMT)
 
     // ── PBR-lite tuning parameters ─────────────────────────────────────────────
     // These control the hybrid RNM + Source lightmap shading model behavior.
@@ -78,6 +79,11 @@ struct MaterialParams {
     float edgePower             = 2.0f;   // Edge term power (grazing angle control)
     float geometricRoughnessPower = 4.0f; // Curvature sensitivity for geometric roughness fallback
     float lightmapBrightness    = 1.0f;   // Lightmap brightness multiplier
+
+    // ── VMT Detail Texture Parameters ──────────────────────────────────────────
+    float detailScale       = 1.0f;   // Detail texture tiling scale ($detailscale)
+    float detailBlendFactor = 1.0f;   // Detail blend intensity ($detailblendfactor)
+    int   detailBlendMode   = 0;      // Detail blend mode ($detailblendmode: 0=multiply, 1=add, 2=lerp)
 };
 
 // ── SceneParams ───────────────────────────────────────────────────────────────

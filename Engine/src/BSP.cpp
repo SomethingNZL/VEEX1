@@ -61,7 +61,6 @@ bool BSP::LoadFromFile(const std::string& path, const GameInfo& game) {
 
     ParseSun();
     m_parser.BuildLightmapAtlas();
-    m_parser.ComputeRNMData();  // Compute RNM data for indirect lighting
     return BuildVertexBuffer();
 }
 
@@ -113,9 +112,12 @@ bool BSP::BuildVertexBuffer() {
 
     for (int fi = 0; fi < (int)faces.size(); ++fi) {
         const dface_t& f = faces[fi];
+        
+        // Use new ShouldRenderFace() method for proper flag checking
+        if (!m_parser.ShouldRenderFace(fi)) continue;
         if (f.texinfo < 0) continue;
+        
         const texinfo_t& ti = texinfo[f.texinfo];
-        if (ti.flags & 0x0080) continue; // SURF_NODRAW
 
         std::vector<glm::vec3> facePoints;
         m_parser.GetFaceVertices(f, facePoints);
@@ -131,6 +133,7 @@ bool BSP::BuildVertexBuffer() {
         key.roughnessID  = mat.roughnessID;
         key.metallicID   = mat.metallicID;
         key.specMaskID   = mat.specMaskID;
+        key.detailID     = mat.detailID;
         key.texinfoID    = static_cast<uint32_t>(f.texinfo);
         key.orientationID= orientationID;
 
@@ -144,21 +147,18 @@ bool BSP::BuildVertexBuffer() {
             rb.matParams.hasRoughnessMap = (mat.roughnessID != 0) ? 1 : 0;
             rb.matParams.hasMetallicMap = (mat.metallicID != 0) ? 1 : 0;
             rb.matParams.hasSpecMaskMap = (mat.specMaskID != 0) ? 1 : 0;
+            rb.matParams.hasDetail = (mat.detailID != 0) ? 1 : 0;
+            
+            // VMT detail texture parameters
+            rb.matParams.detailScale = mat.detailScale;
+            rb.matParams.detailBlendFactor = mat.detailBlendFactor;
+            rb.matParams.detailBlendMode = mat.detailBlendMode;
+            
             materialMeta[key] = rb;
         }
 
         glm::ivec2 dim = m_parser.GetTextureDimensions(f.texinfo);
         bool hasLM = (fi < (int)lmInfos.size() && lmInfos[fi].valid);
-
-        // Get RNM data for this face if available
-        const auto& rnmData = m_parser.GetFaceRNMData();
-        glm::vec3 rnmU(0.0f), rnmV(0.0f), rnmN(0.0f);
-        bool hasRNM = (fi < (int)rnmData.size() && rnmData[fi].valid);
-        if (hasRNM) {
-            rnmU = rnmData[fi].radiosityU;
-            rnmV = rnmData[fi].radiosityV;
-            rnmN = rnmData[fi].radiosityN;
-        }
 
         for (size_t i = 1; i + 1 < facePoints.size(); ++i) {
             glm::vec3 tri[3] = { facePoints[0], facePoints[i], facePoints[i+1] };
@@ -168,9 +168,6 @@ bool BSP::BuildVertexBuffer() {
                 v.normal   = faceNormal;
                 v.texCoord = ComputeTexCoord(tri[k], ti, (float)dim.x, (float)dim.y);
                 v.lmCoord  = hasLM ? ComputeLightmapCoord(tri[k], ti, f, lmInfos[fi]) : glm::vec2(-1.0f);
-                v.rnmU     = hasRNM ? rnmU : glm::vec3(0.0f);
-                v.rnmV     = hasRNM ? rnmV : glm::vec3(0.0f);
-                v.rnmN     = hasRNM ? rnmN : glm::vec3(0.0f);
                 materialVerts[key].push_back(v);
             }
         }

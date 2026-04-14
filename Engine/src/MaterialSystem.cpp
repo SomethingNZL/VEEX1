@@ -3,6 +3,7 @@
 #include "veex/GameInfo.h"
 #include "veex/Logger.h"
 #include "veex/VTFLoader.h"
+#include "veex/VMTLoader.h"
 #include "veex/GLHeaders.h"
 
 #include "../third_party/stb/stb_image.h"
@@ -114,36 +115,106 @@ Material MaterialSystem::GetMaterial(const std::string& name) {
     mat.shaderID = m_defaultShader;
 
     if (m_gameInfo) {
-        // ── Albedo ────────────────────────────────────────────────────────────
-        std::string albedoPath = FindMaterialPath(key, *m_gameInfo);
-
-        // Fallback: strip Source coordinate suffixes then try without maps/ prefix
-        if (albedoPath.empty()) {
-            std::string stripped = StripSourceSuffix(key);
-            if (stripped.rfind("maps/", 0) == 0) {
-                size_t secondSlash = stripped.find('/', 5);
-                if (secondSlash != std::string::npos)
-                    albedoPath = FindMaterialPath(stripped.substr(secondSlash + 1), *m_gameInfo);
+        // ── Try VMT First ──────────────────────────────────────────────────────
+        std::string vmtPath = VMTLoader::FindVMTPath(key, *m_gameInfo);
+        if (!vmtPath.empty()) {
+            VMTLoader vmtLoader;
+            if (vmtLoader.LoadFromFile(vmtPath, *m_gameInfo)) {
+                const VMTMaterial& vmt = vmtLoader.GetMaterial();
+                
+                // Store VMT data in material
+                mat.vmtData = std::make_shared<VMTMaterial>(vmt);
+                
+                // Copy VMT parameters to material
+                mat.baseTextureScale = glm::vec2(vmt.texScale);
+                mat.baseTextureOffset = vmt.baseTextureOffset;
+                mat.bumpTextureScale = glm::vec2(vmt.bumpScale);
+                mat.bumpTextureOffset = vmt.bumpTextureOffset;
+                mat.detailScale = vmt.detailScale;
+                mat.detailBlendFactor = vmt.detailBlendFactor;
+                mat.detailBlendMode = vmt.detailBlendMode;
+                mat.envMapTint = vmt.envMapTint;
+                mat.envMapSaturation = vmt.envMapSaturation;
+                mat.envMapContrast = vmt.envMapContrast;
+                mat.isTranslucent = vmt.isTranslucent;
+                mat.isAlphaTested = vmt.isAlphaTested;
+                mat.isTwoSided = vmt.isTwoSided;
+                mat.isNoCull = vmt.isNoCull;
+                mat.hasEnvMap = vmt.HasEnvMap();
+                mat.shaderFlags = vmt.shaderFlags;
+                
+                // Load base texture from VMT
+                if (!vmt.baseTexture.empty()) {
+                    std::string albedoPath = FindMaterialPath(vmt.baseTexture, *m_gameInfo);
+                    if (!albedoPath.empty()) {
+                        mat.textureID = LoadTexture(albedoPath, true);
+                        mat.diffuseID = mat.textureID;
+                    }
+                }
+                
+                // Load bump map from VMT
+                if (!vmt.bumpMap.empty()) {
+                    std::string normalPath = FindMaterialPath(vmt.bumpMap, *m_gameInfo);
+                    if (!normalPath.empty()) {
+                        mat.normalID = LoadTexture(normalPath);
+                    }
+                }
+                
+                // Load detail texture from VMT
+                if (!vmt.detailTexture.empty()) {
+                    std::string detailPath = FindMaterialPath(vmt.detailTexture, *m_gameInfo);
+                    if (!detailPath.empty()) {
+                        mat.detailID = LoadTexture(detailPath);
+                        mat.detailPath = vmt.detailTexture;
+                    }
+                }
+                
+                // Load roughness/specmask from VMT
+                if (!vmt.roughnessTexture.empty()) {
+                    std::string roughPath = FindMaterialPath(vmt.roughnessTexture, *m_gameInfo);
+                    if (!roughPath.empty()) {
+                        mat.roughnessID = LoadTexture(roughPath);
+                    }
+                }
+                
+                // Log VMT material load
+                Logger::Info("MaterialSystem: Loaded VMT material '" + key + "' (" + vmt.shaderType + ")");
             }
-            if (albedoPath.empty() && stripped != key)
-                albedoPath = FindMaterialPath(stripped, *m_gameInfo);
         }
+        
+        // ── Fallback: Direct texture loading (no VMT) ──────────────────────────
+        if (mat.textureID == 0) {
+            // ── Albedo ────────────────────────────────────────────────────────
+            std::string albedoPath = FindMaterialPath(key, *m_gameInfo);
 
-        if (!albedoPath.empty()) {
-            mat.textureID = LoadTexture(albedoPath, true);
-            mat.diffuseID = mat.textureID;
-        }
+            // Fallback: strip Source coordinate suffixes then try without maps/ prefix
+            if (albedoPath.empty()) {
+                std::string stripped = StripSourceSuffix(key);
+                if (stripped.rfind("maps/", 0) == 0) {
+                    size_t secondSlash = stripped.find('/', 5);
+                    if (secondSlash != std::string::npos)
+                        albedoPath = FindMaterialPath(stripped.substr(secondSlash + 1), *m_gameInfo);
+                }
+                if (albedoPath.empty() && stripped != key)
+                    albedoPath = FindMaterialPath(stripped, *m_gameInfo);
+            }
 
-        // ── PBR maps — derive base name by stripping the extension ────────────
-        if (!albedoPath.empty()) {
-            mat.roughnessID = TryLoadSuffix(key, "_roughness");
-            mat.metallicID  = TryLoadSuffix(key, "_metallic");
-            mat.normalID    = TryLoadSuffix(key, "_normal");
-            mat.specMaskID  = TryLoadSuffix(key, "_specmask");
-            if (mat.normalID == 0)
-                mat.normalID = TryLoadSuffix(key, "_bumpmap");
-            if (mat.normalID == 0)
-                mat.normalID = TryLoadSuffix(key, "_bump");
+            if (!albedoPath.empty()) {
+                mat.textureID = LoadTexture(albedoPath, true);
+                mat.diffuseID = mat.textureID;
+            }
+
+            // ── PBR maps — derive base name by stripping the extension ────────
+            if (!albedoPath.empty()) {
+                mat.roughnessID = TryLoadSuffix(key, "_roughness");
+                mat.metallicID  = TryLoadSuffix(key, "_metallic");
+                mat.normalID    = TryLoadSuffix(key, "_normal");
+                mat.specMaskID  = TryLoadSuffix(key, "_specmask");
+                if (mat.normalID == 0)
+                    mat.normalID = TryLoadSuffix(key, "_bumpmap");
+                if (mat.normalID == 0)
+                    mat.normalID = TryLoadSuffix(key, "_bump");
+            }
         }
     }
 

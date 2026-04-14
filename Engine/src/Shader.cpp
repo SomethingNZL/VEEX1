@@ -31,7 +31,10 @@ Shader::Shader() : m_program(0) {}
 Shader::~Shader()
 {
     if (m_program) {
-        glDeleteProgram(m_program);
+        // Add NULL check to prevent crashes if OpenGL context is invalid
+        if (glad_glDeleteProgram) {
+            glDeleteProgram(m_program);
+        }
         m_program = 0;
     }
 }
@@ -310,6 +313,7 @@ void Shader::UploadMaterialParams(const MaterialParams& mat)
     SetInt  ("u_HasRoughnessMap", mat.hasRoughnessMap ? 1 : 0);
     SetInt  ("u_HasMetallicMap",  mat.hasMetallicMap  ? 1 : 0);
     SetInt  ("u_HasEmissiveMap",  mat.hasEmissiveMap  ? 1 : 0);
+    SetInt  ("u_HasDetail",       mat.hasDetail       ? 1 : 0);
 
     // ── PBR-lite tuning parameters ─────────────────────────────────────────────
     // Upload the new uniforms for the hybrid RNM + Source lightmap shading model.
@@ -319,6 +323,11 @@ void Shader::UploadMaterialParams(const MaterialParams& mat)
     SetFloat("u_EdgePower",             mat.edgePower);
     SetFloat("u_GeometricRoughnessPower", mat.geometricRoughnessPower);
     SetFloat("u_LightmapBrightness",    mat.lightmapBrightness);
+
+    // ── VMT Detail Texture Parameters ──────────────────────────────────────────
+    SetVec2("u_DetailScale", mat.detailScale, mat.detailScale);  // Uniform scale for both axes
+    SetFloat("u_DetailBlendFactor", mat.detailBlendFactor);
+    SetInt("u_DetailBlendMode", mat.detailBlendMode);
 }
 
 // ── Feature-based shader selection ──────────────────────────────────────────────

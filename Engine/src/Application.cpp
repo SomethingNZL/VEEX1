@@ -4,6 +4,8 @@
 #include "veex/MaterialSystem.h" 
 #include "veex/FileSystem.h"
 #include "veex/SoundKit.h"
+#include "veex/GUI.h"
+#include "veex/PauseMenu.h"
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <chrono>
@@ -17,6 +19,7 @@ Application::Application(const std::string& gameInfoPath, const std::string& gam
 int Application::Run() {
     if (!Initialize()) {
         Logger::Error("Application: Failed to initialize.");
+        Shutdown();  // Fix: Call Shutdown() even on init failure to clean up resources
         return -1;
     }
     MainLoop();
@@ -64,6 +67,19 @@ bool Application::Initialize() {
 
     MaterialSystem::Get().Initialize(m_gameInfo);
 
+    // Initialize GUI system after OpenGL context is created
+    GUI::Get().Initialize();
+    
+    // Set GUI to start hidden
+    GUI::Get().SetVisible(false);
+    
+    // Initialize pause menu with game title from gameinfo
+    std::string gameTitle = m_gameInfo.gameName.empty() ? "VEEX Game" : m_gameInfo.gameName;
+    InitializePauseMenu(gameTitle);
+    
+    // Ensure pause menu starts hidden
+    HidePauseMenu(m_window);
+
     m_client = new Client(m_window);
     if (!m_client->Init(m_gameInfo)) return false;
 
@@ -79,6 +95,8 @@ bool Application::Initialize() {
 void Application::MainLoop() {
     auto lastTime = std::chrono::high_resolution_clock::now();
     bool fWasPressed = false;
+    bool escWasPressed = false;
+    bool pauseWasVisible = false;
     
     while (!glfwWindowShouldClose(m_window)) {
         auto now = std::chrono::high_resolution_clock::now();
@@ -100,10 +118,31 @@ void Application::MainLoop() {
             fWasPressed = false;
         }
 
+        // Handle Pause Menu (Escape key) with debounce
+        bool escIsPressed = (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS);
+        if (escIsPressed && !escWasPressed) {
+            TogglePauseMenu(m_window);
+        }
+        escWasPressed = escIsPressed;
+
+        // Track pause menu state transition
+        bool pauseIsVisible = IsPauseMenuVisible();
+        if (pauseWasVisible && !pauseIsVisible) {
+            // Pause menu was just hidden - reset mouse tracking to prevent view jump
+            m_client->ResetMouseTracking();
+        }
+        pauseWasVisible = pauseIsVisible;
+
+        // Update pause menu
+        UpdatePauseMenu(frameTime);
+
         m_server.Tick(m_fixedTick);
 
         if (m_client) {
-            m_client->HandleMouseLook(frameTime);
+            // Only handle mouse look when pause menu is not visible to prevent view direction reset
+            if (!IsPauseMenuVisible()) {
+                m_client->HandleMouseLook(frameTime);
+            }
             
             // Sync audio listener and process spatial/occlusion logic
             SoundKit::Get().Update(
@@ -112,7 +151,10 @@ void Application::MainLoop() {
                 &m_client->GetCurrentMap()
             );
 
-            m_client->Render(m_server, m_skybox); 
+            m_client->Render(m_server, m_skybox);
+
+            // Render GUI on top of the scene (after main rendering)
+            GUI::Get().Render();
         }
 
         glfwSwapBuffers(m_window);

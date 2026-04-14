@@ -21,22 +21,15 @@ namespace veex {
 // attrib 2: texCoord   (vec2) — albedo UV
 // attrib 3: lmCoord    (vec2) — lightmap UV in [0,1] atlas space
 // attrib 4: tangent    (vec4) — xyz = tangent direction, w = bitangent sign
-// attrib 5: rnmU       (vec3) — RNM radiosity in tangent direction
-// attrib 6: rnmV       (vec3) — RNM radiosity in bitangent direction
-// attrib 7: rnmN       (vec3) — RNM radiosity in normal direction
 //
 // The tangent is computed by MikkTSpace (industry-standard) and must be
 // decoded in the shader as:  bitangent = cross(normal, tangent.xyz) * tangent.w
-// RNM data is computed by BSPParser::ComputeRNMData() and provides indirect lighting
 struct Vertex {
     glm::vec3 position;   // attrib 0
     glm::vec3 normal;     // attrib 1
     glm::vec2 texCoord;   // attrib 2
     glm::vec2 lmCoord;    // attrib 3
     glm::vec4 tangent;    // attrib 4  (MikkTSpace output)
-    glm::vec3 rnmU;       // attrib 5  (RNM radiosity in tangent direction)
-    glm::vec3 rnmV;       // attrib 6  (RNM radiosity in bitangent direction)
-    glm::vec3 rnmN;       // attrib 7  (RNM radiosity in normal direction)
 };
 
 // ── BatchKey ──────────────────────────────────────────────────────────────────
@@ -52,6 +45,7 @@ struct BatchKey {
     uint32_t metallicID   = 0;   // GL handle — metallic   (unit 3);  0 = scalar
     uint32_t emissiveID   = 0;   // GL handle — emissive   (unit 5);  0 = none
     uint32_t specMaskID   = 0;   // GL handle — Source specmask-style combined maps
+    uint32_t detailID     = 0;   // GL handle — detail texture (unit 7);  0 = none
     uint32_t texinfoID    = 0;   // BSP texinfo index, preserves texture mapping/orientation
     uint32_t orientationID= 0;   // Encoded major face direction
     uint32_t shaderFlags  = 0;   // ShaderFeatureFlags bitmask for this material
@@ -64,6 +58,7 @@ struct BatchKey {
             && metallicID   == o.metallicID
             && specMaskID   == o.specMaskID
             && emissiveID   == o.emissiveID
+            && detailID     == o.detailID
             && texinfoID    == o.texinfoID
             && orientationID== o.orientationID
             && shaderFlags  == o.shaderFlags;
@@ -127,6 +122,12 @@ struct RenderBatch {
         bool  hasMetallicMap   = false;
         bool  hasSpecMaskMap   = false;
         bool  hasEmissiveMap   = false;
+        bool  hasDetail        = false;   // Has detail texture (from VMT)
+        
+        // ── VMT Detail Texture Parameters ──────────────────────────────────────
+        float detailScale       = 1.0f;   // Detail texture tiling scale
+        float detailBlendFactor = 1.0f;   // Detail blend intensity
+        int   detailBlendMode   = 0;      // 0=multiply, 1=add, 2=lerp
     } matParams;
 
     // ── Convenience accessors (backwards compat) ──────────────────────────────

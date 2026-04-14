@@ -47,6 +47,68 @@ struct BSPHeader {
     int    mapRevision;
 };
 
+// ── Surface and Content Flags (Source Engine BSP V20) ──────────────────────────
+// Surface flags from bspflags.h - used for rendering decisions
+enum SurfaceFlags : uint32_t {
+    SURF_LIGHT        = 0x0001,    // value will hold the light strength
+    SURF_SKY2D        = 0x0002,    // don't draw, indicates we should skylight + draw 2d sky but not draw the 3D skybox
+    SURF_SKY          = 0x0004,    // don't draw, but add to skybox
+    SURF_WARP         = 0x0008,    // turbulent water warp
+    SURF_TRANS        = 0x0010,    // translucent surface
+    SURF_NOPORTAL     = 0x0020,    // the surface can not have a portal placed on it
+    SURF_TRIGGER      = 0x0040,    // FIXME: This is an xbox hack to work around elimination of trigger surfaces, which breaks occluders
+    SURF_NODRAW       = 0x0080,    // don't bother referencing the texture
+    SURF_HINT         = 0x0100,    // make a primary bsp splitter
+    SURF_SKIP         = 0x0200,    // completely ignore, allowing non-closed brushes
+    SURF_NOLIGHT      = 0x0400,    // Don't calculate light
+    SURF_BUMPLIGHT    = 0x0800,    // calculate three lightmaps for the surface for bumpmapping
+    SURF_NOSHADOWS    = 0x1000,    // Don't receive shadows
+    SURF_NODECALS     = 0x2000,    // Don't receive decals
+    SURF_NOCHOP       = 0x4000,    // Don't subdivide patches on this surface
+    SURF_HITBOX       = 0x8000,    // surface is part of a hitbox
+};
+
+// Content flags from bspflags.h - used for gameplay and effects
+enum ContentFlags : uint32_t {
+    CONTENTS_EMPTY            = 0,
+    CONTENTS_SOLID            = 0x1,        // an eye is never valid in a solid
+    CONTENTS_WINDOW           = 0x2,        // translucent, but not watery (glass)
+    CONTENTS_GRATE            = 0x8,        // alpha-tested "grate" textures. Bullets/sight pass through, but solids don't
+    CONTENTS_SLIME            = 0x10,
+    CONTENTS_WATER            = 0x20,
+    CONTENTS_OPAQUE           = 0x80,       // things that cannot be seen through (may be non-solid though)
+    CONTENTS_MOVEABLE         = 0x4000,     // hits entities which are MOVETYPE_PUSH (doors, plats, etc.)
+    CONTENTS_PLAYERCLIP       = 0x10000,
+    CONTENTS_MONSTERCLIP      = 0x20000,
+    CONTENTS_LADDER           = 0x20000000,
+};
+
+// Face material type for shader selection and rendering path
+enum class FaceMaterialType {
+    Standard,      // Regular opaque surface
+    Sky,           // Sky surface (uses skybox)
+    Water,         // Water surface (translucent/refractive)
+    Translucent,   // Transparent surface (glass, etc.)
+    Warp,          // Turbulent/warp surface
+    NoDraw,        // Surface not drawn (NODRAW)
+    Hint,          // Hint surface (structural, not rendered)
+};
+
+// Resolved face information for rendering decisions
+struct FaceInfo {
+    uint32_t surfaceFlags = 0;      // Surface flags from texinfo
+    uint32_t contentFlags = 0;      // Content flags from leaf
+    FaceMaterialType materialType = FaceMaterialType::Standard;
+    bool isSky : 1;                 // SURF_SKY or SURF_SKY2D
+    bool isWater : 1;               // CONTENTS_WATER
+    bool isTranslucent : 1;         // SURF_TRANS
+    bool isWarp : 1;                // SURF_WARP
+    bool hasLightmap : 1;           // Face has lightmap data
+    bool castsShadows : 1;          // !SURF_NOSHADOWS
+    bool receivesDecals : 1;        // !SURF_NODECALS
+    bool shouldRender : 1;          // !SURF_NODRAW && !SURF_SKIP && !SURF_HINT
+};
+
 // ── BSP Geometry Structs ──────────────────────────────────────────────────────
 struct dplane_t  { glm::vec3 normal; float dist; int type; };
 struct dedge_t   { unsigned short v[2]; };
@@ -172,6 +234,17 @@ struct FaceRNMData {
     bool      valid = false;
 };
 
+// ── Cached Texture Info ───────────────────────────────────────────────────────
+// Resolved texture information cached per texinfo index to avoid repeated lookups
+struct CachedTexInfo {
+    std::string name;
+    glm::ivec2 dimensions;
+    glm::vec3 reflectivity;
+    uint32_t surfaceFlags;
+    FaceMaterialType materialType;
+    bool isCached;
+};
+
 // ── BSPParser ─────────────────────────────────────────────────────────────────
 class BSPParser {
 public:
@@ -192,25 +265,36 @@ public:
     std::string GetTextureName(int texinfoIndex) const;
     glm::ivec2  GetTextureDimensions(int texinfoIndex) const;
 
-    // VIS
+    // ── Face Info Resolution (New) ─────────────────────────────────────────────
+    // Get resolved face information with all flags parsed
+    FaceInfo GetFaceInfo(int faceIndex) const;
+
+    // Get face material type for shader selection
+    FaceMaterialType GetFaceMaterialType(int texinfoIndex) const;
+
+    // Check if face should be rendered
+    bool ShouldRenderFace(int faceIndex) const;
+
+    // Get cached texture info for fast access
+    const CachedTexInfo& GetCachedTexInfo(int texinfoIndex) const;
+
+    // ── VIS ────────────────────────────────────────────────────────────────────
     std::unordered_set<int> GetVisibleFaceIndices(const glm::vec3& worldPos) const;
     bool HasVis() const { return m_visNumClusters > 0; }
 
-    // Lightmap
+    // ── Lightmap ───────────────────────────────────────────────────────────────
     uint32_t BuildLightmapAtlas();
     uint32_t                             GetLightmapAtlasID()    const { return m_lightmapAtlasID; }
     const std::vector<FaceLightmapInfo>& GetFaceLightmapInfo()   const { return m_faceLightmapInfo; }
 
-    // RNM (Radiosity Normal Maps)
-    void ComputeRNMData();
-    const std::vector<FaceRNMData>& GetFaceRNMData() const { return m_faceRNMData; }
-    const std::vector<dworldlight_t>& GetWorldLights() const { return m_worldLights; }
-
-    // Leaf ambient lighting
+    // ── Leaf ambient lighting ──────────────────────────────────────────────────
     const std::vector<dleafambientlighting_t>& GetLeafAmbientLighting() const { return m_leafAmbientLighting; }
     const std::vector<dleafambientindex_t>& GetLeafAmbientIndex() const { return m_leafAmbientIndex; }
 
-    // Public utility for decoding RGBE format (used by RNM and lightmap systems)
+    // ── World Lights ───────────────────────────────────────────────────────────
+    const std::vector<dworldlight_t>& GetWorldLights() const { return m_worldLights; }
+
+    // ── Public utility for decoding RGBE format ────────────────────────────────
     static glm::vec3 DecodeRGBExp32(const ColorRGBExp32& s);
 
 private:
@@ -245,6 +329,9 @@ private:
     std::vector<ColorRGBExp32>    m_lightingData;
     std::vector<FaceLightmapInfo> m_faceLightmapInfo;
     uint32_t                      m_lightmapAtlasID = 0;
+
+    // Cached texture info for fast access
+    std::vector<CachedTexInfo>         m_cachedTexInfo;
 
     // RNM data
     std::vector<dworldlight_t>         m_worldLights;

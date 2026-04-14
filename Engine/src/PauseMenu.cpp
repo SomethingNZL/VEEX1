@@ -1,11 +1,12 @@
 // veex/PauseMenu.cpp
-// Pause menu implementation using the internal GUI system.
+// Pause menu implementation using Dear ImGui.
 
-#include "veex/GUI.h"
+#include "veex/PauseMenu.h"
 #include "veex/Logger.h"
 #include "veex/GameInfo.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <GLFW/glfw3.h>
+#include "imgui.h"
 
 namespace veex {
 
@@ -21,95 +22,6 @@ public:
         if (m_initialized) return;
         
         m_gameTitle = gameTitle;
-        
-        // Create the pause menu root panel
-        auto root = GUI::Get().CreatePanel();
-        root->id = "pause_menu_root";
-        root->SetSize(800, 600);
-        root->SetAnchor(GUIAnchor::MiddleCenter);
-        root->style.backgroundColor = GUIColor(0.0f, 0.0f, 0.0f, 0.8f); // Dark transparent background
-        root->style.borderColor = GUIColor(1.0f, 0.4f, 0.0f, 1.0f);   // HL2 orange border
-        root->style.borderWidth = 4.0f;
-        root->style.paddingLeft = 40.0f;
-        root->style.paddingRight = 40.0f;
-        root->style.paddingTop = 40.0f;
-        root->style.paddingBottom = 40.0f;
-        
-        // Create title (using game title from gameinfo.txt)
-        auto title = GUI::Get().CreateLabel(m_gameTitle);
-        title->style.fontSize = 48.0f;
-        title->style.fontBold = true;
-        title->style.textColor = GUIColor::Orange();
-        title->style.textAlign = GUIAlign::TopCenter;
-        title->SetSize(720, 60);
-        title->SetAnchor(GUIAnchor::TopCenter);
-        
-        // Create subtitle
-        auto subtitle = GUI::Get().CreateLabel("PAUSED");
-        subtitle->style.fontSize = 24.0f;
-        subtitle->style.textColor = GUIColor::White();
-        subtitle->style.textAlign = GUIAlign::TopCenter;
-        subtitle->SetSize(720, 30);
-        subtitle->SetAnchor(GUIAnchor::TopCenter);
-        subtitle->SetPosition(0, 70);
-        
-        // Create main menu container (flex column)
-        auto menuContainer = GUI::Get().CreatePanel();
-        menuContainer->style.isFlexContainer = true;
-        menuContainer->style.flexHorizontal = false;
-        menuContainer->style.flexSpacing = 20.0f;
-        menuContainer->style.flexAlign = GUIAlign::MiddleCenter;
-        menuContainer->SetSize(400, 300);
-        menuContainer->SetAnchor(GUIAnchor::MiddleCenter);
-        
-        // Create menu buttons
-        auto resumeButton = CreateMenuButton("RESUME GAME", []() {
-            Logger::Info("[PauseMenu] Resume Game clicked");
-            PauseMenu::Get().Hide();
-        });
-        
-        auto saveButton = CreateMenuButton("SAVE GAME", []() {
-            Logger::Info("[PauseMenu] Save Game clicked");
-        });
-        
-        auto loadButton = CreateMenuButton("LOAD GAME", []() {
-            Logger::Info("[PauseMenu] Load Game clicked");
-        });
-        
-        auto optionsButton = CreateMenuButton("OPTIONS", []() {
-            Logger::Info("[PauseMenu] Options clicked");
-        });
-        
-        auto quitButton = CreateMenuButton("QUIT TO WINDOWS", []() {
-            Logger::Info("[PauseMenu] Quit to Windows clicked");
-            // In a real implementation, this would exit the game
-        });
-        
-        // Add buttons to container
-        menuContainer->AddChild(std::move(resumeButton));
-        menuContainer->AddChild(std::move(saveButton));
-        menuContainer->AddChild(std::move(loadButton));
-        menuContainer->AddChild(std::move(optionsButton));
-        menuContainer->AddChild(std::move(quitButton));
-        
-        // Create bottom hint
-        auto hint = GUI::Get().CreateLabel("Press ESC to resume");
-        hint->style.fontSize = 14.0f;
-        hint->style.textColor = GUIColor(0.7f, 0.7f, 0.7f, 1.0f);
-        hint->style.textAlign = GUIAlign::BottomCenter;
-        hint->SetSize(720, 20);
-        hint->SetAnchor(GUIAnchor::BottomCenter);
-        hint->SetPosition(0, -50);
-        
-        // Add all elements to root
-        root->AddChild(std::move(title));
-        root->AddChild(std::move(subtitle));
-        root->AddChild(std::move(menuContainer));
-        root->AddChild(std::move(hint));
-        
-        // Set as GUI root
-        GUI::Get().SetRoot(std::move(root));
-        
         m_initialized = true;
         Logger::Info("[PauseMenu] Initialized");
     }
@@ -127,13 +39,11 @@ public:
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         }
         
-        GUI::Get().SetVisible(true);
         m_visible = true;
     }
     
     void Hide(GLFWwindow* window = nullptr) {
         Logger::Info("[PauseMenu] Hiding pause menu");
-        GUI::Get().SetVisible(false);
         m_visible = false;
         
         // Disable cursor when pause menu is hidden
@@ -158,15 +68,96 @@ public:
     }
     
     void Update(float deltaTime) {
-        if (m_visible) {
-            GUI::Get().Update(deltaTime);
-        }
+        // ImGui handles its own update
     }
     
     void Render() {
-        if (m_visible) {
-            GUI::Get().Render();
+        if (!m_visible) return;
+        
+        RenderImGuiMenu();
+    }
+    
+    void RenderImGuiMenu() {
+        ImGuiIO& io = ImGui::GetIO();
+        float screenWidth = io.DisplaySize.x;
+        float screenHeight = io.DisplaySize.y;
+        
+        // Semi-transparent dark overlay
+        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+        drawList->AddRectFilled(ImVec2(0, 0), ImVec2(screenWidth, screenHeight), 
+                               IM_COL32(0, 0, 0, 200));
+        
+        // Pause menu window
+        float windowWidth = 500.0f;
+        float windowHeight = 400.0f;
+        float windowX = (screenWidth - windowWidth) / 2.0f;
+        float windowY = (screenHeight - windowHeight) / 2.0f;
+        
+        ImGui::SetNextWindowPos(ImVec2(windowX, windowY));
+        ImGui::SetNextWindowSize(ImVec2(windowWidth, windowHeight));
+        
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | 
+                                 ImGuiWindowFlags_NoResize | 
+                                 ImGuiWindowFlags_NoMove |
+                                 ImGuiWindowFlags_NoCollapse |
+                                 ImGuiWindowFlags_NoSavedSettings;
+        
+        ImGui::Begin("Pause Menu", nullptr, flags);
+        
+        // Title - game title
+        ImGui::SetCursorPos(ImVec2(20, 20));
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.0f, 1.0f), "%s", m_gameTitle.c_str());
+        
+        // Subtitle
+        ImGui::SetCursorPos(ImVec2(20, 60));
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "PAUSED");
+        
+        // Menu buttons
+        ImGui::SetCursorPos(ImVec2(50, 120));
+        
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 0.4f, 0.0f, 1.0f));
+        
+        if (ImGui::Button("RESUME GAME", ImVec2(400, 50))) {
+            Logger::Info("[PauseMenu] Resume Game clicked");
+            Hide();
         }
+        
+        ImGui::Spacing();
+        
+        if (ImGui::Button("SAVE GAME", ImVec2(400, 50))) {
+            Logger::Info("[PauseMenu] Save Game clicked");
+        }
+        
+        ImGui::Spacing();
+        
+        if (ImGui::Button("LOAD GAME", ImVec2(400, 50))) {
+            Logger::Info("[PauseMenu] Load Game clicked");
+        }
+        
+        ImGui::Spacing();
+        
+        if (ImGui::Button("OPTIONS", ImVec2(400, 50))) {
+            Logger::Info("[PauseMenu] Options clicked");
+        }
+        
+        ImGui::Spacing();
+        
+        if (ImGui::Button("QUIT TO WINDOWS", ImVec2(400, 50))) {
+            Logger::Info("[PauseMenu] Quit to Windows clicked");
+        }
+        
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar();
+        
+        // Bottom hint
+        ImGui::SetCursorPos(ImVec2(20, windowHeight - 40));
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Press ESC to resume");
+        
+        ImGui::End();
     }
     
     // Input handling
@@ -187,31 +178,6 @@ private:
     double m_lastMouseX = 0.0;
     double m_lastMouseY = 0.0;
     
-    std::unique_ptr<GUIElement> CreateMenuButton(const std::string& text, std::function<void()> onClick) {
-        auto button = GUI::Get().CreateButton(text);
-        button->style.fontSize = 20.0f;
-        button->style.fontBold = true;
-        button->style.backgroundColor = GUIColor(0.1f, 0.1f, 0.1f, 1.0f);
-        button->style.textColor = GUIColor::White();
-        button->style.hoverColor = GUIColor(0.2f, 0.2f, 0.2f, 1.0f);
-        button->style.borderColor = GUIColor(1.0f, 0.4f, 0.0f, 1.0f);
-        button->style.borderWidth = 2.0f;
-        button->style.paddingLeft = 20.0f;
-        button->style.paddingRight = 20.0f;
-        button->style.paddingTop = 10.0f;
-        button->style.paddingBottom = 10.0f;
-        button->SetSize(300, 40);
-        
-        // Set up click handler
-        button->onClick = [onClick](GUIElement* element, GUIEventType type) {
-            if (type == GUIEventType::OnClick) {
-                onClick();
-            }
-        };
-        
-        return button;
-    }
-    
     bool m_initialized = false;
     bool m_visible = false;
     std::string m_gameTitle = "VEEX Game";
@@ -227,15 +193,15 @@ void InitializePauseMenu() {
     PauseMenu::Get().Initialize();
 }
 
-void ShowPauseMenu(GLFWwindow* window = nullptr) {
+void ShowPauseMenu(GLFWwindow* window) {
     PauseMenu::Get().Show(window);
 }
 
-void HidePauseMenu(GLFWwindow* window = nullptr) {
+void HidePauseMenu(GLFWwindow* window) {
     PauseMenu::Get().Hide(window);
 }
 
-void TogglePauseMenu(GLFWwindow* window = nullptr) {
+void TogglePauseMenu(GLFWwindow* window) {
     PauseMenu::Get().Toggle(window);
 }
 

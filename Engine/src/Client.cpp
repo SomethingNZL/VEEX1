@@ -46,6 +46,9 @@ bool Client::Init(const GameInfo& game)
     // Upload the VBO to the GPU — must happen after LoadFromFile.
     m_renderer.UploadMap(m_currentMap);
 
+    // Create reflection probes for the map
+    m_renderer.CreateProbesForMap(m_currentMap);
+
     m_player.BuildCollisionMesh(m_currentMap);
     m_camera.SetRotation(-90.0f, 0.0f);
 

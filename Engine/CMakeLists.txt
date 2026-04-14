@@ -18,6 +18,7 @@ set(GLAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/glad")
 set(MIKKT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/MikkTSpace")
 set(MINIAUDIO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
 set(VTFPARSER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/VTFParser")
+set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui")
 
 # glad - bundled in third_party
 add_library(glad STATIC
@@ -79,7 +80,19 @@ add_executable(${ENGINE_NAME}
     src/LightmapSystem.cpp  # <--- Add LightmapSystem implementation
     src/GUI.cpp             # <--- Add GUI system implementation
     src/PauseMenu.cpp       # <--- Add pause menu implementation
+    src/MainMenu.cpp        # <--- Add main menu implementation
+    src/MDL.cpp             # <--- Add MDL model format support
+    src/PropDynamicEntity.cpp # <--- Add Dynamic MDL entity support
+    src/ReflectionProbe.cpp # <--- Add Reflection Probe system
     "${MIKKT_DIR}/mikktspace.c"
+    # Dear ImGui - GUI framework (MIT License)
+    "${IMGUI_DIR}/imgui.cpp"
+    "${IMGUI_DIR}/imgui_demo.cpp"
+    "${IMGUI_DIR}/imgui_draw.cpp"
+    "${IMGUI_DIR}/imgui_tables.cpp"
+    "${IMGUI_DIR}/imgui_widgets.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
 )
 
 # Skip PCH for C and implementation files
@@ -97,6 +110,9 @@ target_include_directories(${ENGINE_NAME} PRIVATE
     "${MIKKT_DIR}"
     "${MINIAUDIO_DIR}" # <--- Include miniaudio directory
     "${VTFPARSER_DIR}" # <--- Include VTFParser directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb" # <--- Include stb directory for stb_truetype
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui" # <--- Include Dear ImGui directory
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/backends" # <--- Include ImGui backends
 )
 
 target_precompile_headers(${ENGINE_NAME} PRIVATE

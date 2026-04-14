@@ -6,6 +6,7 @@
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <string>
+#include <cstring>
 
 // OpenGL DXT compressed texture format constants for OpenGL 3.3 Core
 // These are typically defined in GL_ARB_texture_compression_bptc or GL_EXT_texture_compression_s3tc

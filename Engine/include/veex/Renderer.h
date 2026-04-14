@@ -7,6 +7,7 @@
 #include "veex/Common.h"
 #include "veex/Shader.h"
 #include "veex/TileRenderer.h"
+#include "veex/ReflectionProbe.h"
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -58,6 +59,13 @@ public:
     
     void SetRenderMode(RenderMode mode) { m_renderMode = mode; }
     RenderMode GetRenderMode() const { return m_renderMode; }
+    
+    // ── Probe Creation ────────────────────────────────────────────────────────
+    // Create reflection probes automatically based on map bounds
+    void CreateProbesForMap(const BSP& map);
+    
+    // Get access to the reflection probe system
+    ReflectionProbeSystem& GetReflectionProbeSystem() { return m_reflectionProbeSystem; }
 
 private:
     // Orchestration
@@ -111,8 +119,18 @@ private:
     // ── Tile-based Rendering ──────────────────────────────────────────────────
     TileRenderer m_tileRenderer;
     
+    // ── Reflection Probe System ───────────────────────────────────────────────
+    ReflectionProbeSystem m_reflectionProbeSystem;
+    
     // ── Render Mode ───────────────────────────────────────────────────────────
     RenderMode m_renderMode = RenderMode::Forward;
+    
+    // ── Reflection Probe Rendering ────────────────────────────────────────────
+    void CaptureReflectionProbes(const BSP& map, const Camera& camera, int width, int height);
+    void CaptureProbeCubemap(const BSP& map, const Camera& camera, 
+                            ReflectionProbe* probe, int viewportWidth, int viewportHeight);
+    void RenderReflectionProbeCubemap(const BSP& map, const Camera& camera, 
+                                      int width, int height, const glm::mat4& viewProj);
 };
 
 } // namespace veex

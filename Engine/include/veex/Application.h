@@ -3,6 +3,7 @@
 #include "veex/Client.h"
 #include "veex/Server.h"
 #include "veex/Skybox.h"
+#include "veex/MainMenu.h"
 #include <string>
 
 struct GLFWwindow;
@@ -21,6 +22,9 @@ private:
     bool Initialize();
     void MainLoop();
     void Shutdown();
+    void LoadMap(const std::string& mapFile);
+    void LoadBackgroundMap(const std::string& mapFile);
+    void HandleMainMenuInput();
 
     std::string m_gameInfoPath;
     std::string m_gameInfoBinPath;
@@ -31,6 +35,8 @@ private:
     Client* m_client;
     Server m_server;
     Skybox m_skybox;
+
+    bool m_showMainMenu = true;  // Start with main menu visible
 
     float m_fixedTick = 0.015f; 
     bool m_escWasPressed = false;

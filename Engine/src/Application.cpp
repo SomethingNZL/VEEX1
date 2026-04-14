@@ -73,20 +73,32 @@ bool Application::Initialize() {
     // Set GUI to start hidden
     GUI::Get().SetVisible(false);
     
-    // Initialize pause menu with game title from gameinfo
+    // Initialize pause menu FIRST (before main menu)
     std::string gameTitle = m_gameInfo.gameName.empty() ? "VEEX Game" : m_gameInfo.gameName;
     InitializePauseMenu(gameTitle);
     
     // Ensure pause menu starts hidden
     HidePauseMenu(m_window);
+    
+    // Initialize main menu
+    MainMenu::Get().Initialize(m_gameInfo);
+    
+    // Load background map for main menu (use maps/ prefix as per search paths)
+    LoadBackgroundMap("maps/background01.bsp");
+    
+    // Show the main menu (this will set GUI visible to true)
+    MainMenu::Get().Show(m_window);
+    
+    // Show mouse cursor for main menu
+    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    
+    // Set up chapter select callback
+    MainMenu::Get().SetChapterSelectCallback([this](const std::string& mapFile) {
+        LoadMap(mapFile);
+    });
 
-    m_client = new Client(m_window);
-    if (!m_client->Init(m_gameInfo)) return false;
-
-    m_server.Init(m_client->GetCurrentMap().GetParser().GetEntityData(), "entities.binfo", m_gameInfo);
-
-    m_skybox.Initialize(m_server.GetSkyName(), m_gameInfo);
-    m_client->SetSpawnPoint(m_server.GetSpawnPoint());
+    // Don't initialize client yet - wait for chapter selection
+    m_client = nullptr;
 
     Logger::Info("Application: VEEX Engine Initialized Successfully.");
     return true;
@@ -107,54 +119,59 @@ void Application::MainLoop() {
 
         glfwPollEvents();
 
-        // Handle Sound Test Key (F)
-        if (glfwGetKey(m_window, GLFW_KEY_F) == GLFW_PRESS) {
-            if (!fWasPressed) {
-                Logger::Info("Input: F key pressed. Triggering test sound...");
-                SoundKit::Get().PlayOneShot("sound/test.wav", m_client->GetCamera().GetPosition());
-                fWasPressed = true;
-            }
+        // Handle main menu vs game input
+        if (m_showMainMenu) {
+            HandleMainMenuInput();
         } else {
-            fWasPressed = false;
-        }
-
-        // Handle Pause Menu (Escape key) with debounce
-        bool escIsPressed = (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS);
-        if (escIsPressed && !escWasPressed) {
-            TogglePauseMenu(m_window);
-        }
-        escWasPressed = escIsPressed;
-
-        // Track pause menu state transition
-        bool pauseIsVisible = IsPauseMenuVisible();
-        if (pauseWasVisible && !pauseIsVisible) {
-            // Pause menu was just hidden - reset mouse tracking to prevent view jump
-            m_client->ResetMouseTracking();
-        }
-        pauseWasVisible = pauseIsVisible;
-
-        // Update pause menu
-        UpdatePauseMenu(frameTime);
-
-        m_server.Tick(m_fixedTick);
-
-        if (m_client) {
-            // Only handle mouse look when pause menu is not visible to prevent view direction reset
-            if (!IsPauseMenuVisible()) {
-                m_client->HandleMouseLook(frameTime);
+            // Handle Sound Test Key (F)
+            if (glfwGetKey(m_window, GLFW_KEY_F) == GLFW_PRESS) {
+                if (!fWasPressed) {
+                    Logger::Info("Input: F key pressed. Triggering test sound...");
+                    SoundKit::Get().PlayOneShot("sound/test.wav", m_client->GetCamera().GetPosition());
+                    fWasPressed = true;
+                }
+            } else {
+                fWasPressed = false;
             }
-            
-            // Sync audio listener and process spatial/occlusion logic
-            SoundKit::Get().Update(
-                m_client->GetCamera().GetPosition(), 
-                m_client->GetCamera().GetForward(), 
-                &m_client->GetCurrentMap()
-            );
 
-            m_client->Render(m_server, m_skybox);
+            // Handle Pause Menu (Escape key) with debounce
+            bool escIsPressed = (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS);
+            if (escIsPressed && !escWasPressed) {
+                TogglePauseMenu(m_window);
+            }
+            escWasPressed = escIsPressed;
 
-            // Render GUI on top of the scene (after main rendering)
-            GUI::Get().Render();
+            // Track pause menu state transition
+            bool pauseIsVisible = IsPauseMenuVisible();
+            if (pauseWasVisible && !pauseIsVisible) {
+                // Pause menu was just hidden - reset mouse tracking to prevent view jump
+                m_client->ResetMouseTracking();
+            }
+            pauseWasVisible = pauseIsVisible;
+
+            // Update pause menu
+            UpdatePauseMenu(frameTime);
+
+            m_server.Tick(m_fixedTick);
+
+            if (m_client) {
+                // Only handle mouse look when pause menu is not visible to prevent view direction reset
+                if (!IsPauseMenuVisible()) {
+                    m_client->HandleMouseLook(frameTime);
+                }
+                
+                // Sync audio listener and process spatial/occlusion logic
+                SoundKit::Get().Update(
+                    m_client->GetCamera().GetPosition(), 
+                    m_client->GetCamera().GetForward(), 
+                    &m_client->GetCurrentMap()
+                );
+
+                m_client->Render(m_server, m_skybox);
+
+                // Render GUI on top of the scene (after main rendering)
+                GUI::Get().Render();
+            }
         }
 
         glfwSwapBuffers(m_window);
@@ -163,6 +180,7 @@ void Application::MainLoop() {
 
 void Application::Shutdown() {
     Logger::Info("Application: Shutting down...");
+    MainMenu::Get().Shutdown();
     MaterialSystem::Get().Shutdown();
     m_skybox.Shutdown();
     m_server.Shutdown();
@@ -175,6 +193,72 @@ void Application::Shutdown() {
         glfwDestroyWindow(m_window);
     }
     glfwTerminate();
+}
+
+void Application::LoadMap(const std::string& mapFile) {
+    Logger::Info("Application: Loading map: " + mapFile);
+    
+    // Initialize client with the selected map
+    m_client = new Client(m_window);
+    if (!m_client->Init(m_gameInfo)) {
+        Logger::Error("Application: Failed to initialize client with map: " + mapFile);
+        return;
+    }
+    
+    // Initialize server and skybox
+    m_server.Init(m_client->GetCurrentMap().GetParser().GetEntityData(), "entities.binfo", m_gameInfo);
+    m_skybox.Initialize(m_server.GetSkyName(), m_gameInfo);
+    m_client->SetSpawnPoint(m_server.GetSpawnPoint());
+    
+    // Hide main menu and show game
+    m_showMainMenu = false;
+    MainMenu::Get().Hide(m_window);
+    
+    // Hide and lock mouse cursor for gameplay
+    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    
+    Logger::Info("Application: Map loaded successfully: " + mapFile);
+}
+
+void Application::LoadBackgroundMap(const std::string& mapFile) {
+    Logger::Info("Application: Loading background map for main menu: " + mapFile);
+    
+    // Try to load the background map
+    std::string mapPath = ResolveAssetPath(mapFile, m_gameInfo);
+    if (mapPath.empty()) {
+        Logger::Warn("Application: Background map not found: " + mapFile);
+        return;
+    }
+    
+    // Create a temporary client just to load and render the background
+    // We don't initialize the full game systems - just load the BSP for rendering
+    m_client = new Client(m_window);
+    if (!m_client->Init(m_gameInfo)) {
+        Logger::Warn("Application: Failed to load background map: " + mapFile);
+        delete m_client;
+        m_client = nullptr;
+        return;
+    }
+    
+    Logger::Info("Application: Background map loaded: " + mapFile);
+}
+
+void Application::HandleMainMenuInput() {
+    // Start ImGui frame for main menu
+    GUI::Get().NewFrame();
+    
+    // Update main menu
+    MainMenu::Get().Update(0.016f); // 60 FPS update
+    
+    // Render main menu (blank background + UI)
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background for main menu
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    // Render main menu UI (this will call ImGui functions)
+    MainMenu::Get().Render();
+    
+    // Render ImGui draw data
+    GUI::Get().Render();
 }
 
 } // namespace veex

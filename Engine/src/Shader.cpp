@@ -315,13 +315,9 @@ void Shader::UploadMaterialParams(const MaterialParams& mat)
     SetInt  ("u_HasEmissiveMap",  mat.hasEmissiveMap  ? 1 : 0);
     SetInt  ("u_HasDetail",       mat.hasDetail       ? 1 : 0);
 
-    // ── PBR-lite tuning parameters ─────────────────────────────────────────────
-    // Upload the new uniforms for the hybrid RNM + Source lightmap shading model.
-    SetFloat("u_RNMScale",              mat.rnmScale);
-    SetFloat("u_LightmapSoftness",      mat.lightmapSoftness);
-    SetFloat("u_DiffuseFlattening",     mat.diffuseFlattening);
-    SetFloat("u_EdgePower",             mat.edgePower);
-    SetFloat("u_GeometricRoughnessPower", mat.geometricRoughnessPower);
+    // ── Paper's Lighting Model Parameters ────────────────────────────────────────
+    // Based on: "A Practical Real-Time Lighting Model for BSP-Based Renderers"
+    SetFloat("u_DiffuseCoefficient",    mat.diffuseCoefficient);
     SetFloat("u_LightmapBrightness",    mat.lightmapBrightness);
 
     // ── VMT Detail Texture Parameters ──────────────────────────────────────────

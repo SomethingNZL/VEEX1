@@ -71,14 +71,10 @@ struct MaterialParams {
     bool hasEmissiveMap = false;
     bool hasDetail      = false;   // Has detail texture (from VMT)
 
-    // ── PBR-lite tuning parameters ─────────────────────────────────────────────
-    // These control the hybrid RNM + Source lightmap shading model behavior.
-    float rnmScale              = 1.0f;   // RNM sharpness scale
-    float lightmapSoftness      = 0.5f;   // Lightmap directional softness
-    float diffuseFlattening     = 0.5f;   // Diffuse flattening for rough surfaces
-    float edgePower             = 2.0f;   // Edge term power (grazing angle control)
-    float geometricRoughnessPower = 4.0f; // Curvature sensitivity for geometric roughness fallback
-    float lightmapBrightness    = 1.0f;   // Lightmap brightness multiplier
+    // ── Paper's Lighting Model Parameters ────────────────────────────────────────
+    // Based on: "A Practical Real-Time Lighting Model for BSP-Based Renderers"
+    float diffuseCoefficient    = 1.0f;   // k_D in paper (diffuse coefficient)
+    float lightmapBrightness    = 1.0f;   // Lightmap exposure multiplier
 
     // ── VMT Detail Texture Parameters ──────────────────────────────────────────
     float detailScale       = 1.0f;   // Detail texture tiling scale ($detailscale)

@@ -7,6 +7,11 @@
 *.so
 *.ipch
 *.pdb
+*.vtf
+*.mdl
+*.bsp
+*.vmt
+
 
 # ── VEEX Engine Build Folders ─────────────────────────────────
 # Ignore both the local Mac and Windows cross-compile builds
@@ -14,6 +19,7 @@ build/
 build_win/
 game/materials
 game/maps
+Engine/Game
 
 # ── macOS Junk ────────────────────────────────────────────────
 .DS_Store

@@ -28,16 +28,39 @@ int Application::Run() {
 }
 
 bool Application::Initialize() {
-    if (!glfwInit()) return false;
+    Logger::Info("Application: Starting initialization...");
+    if (!glfwInit()) {
+        Logger::Error("Application: glfwInit failed");
+        return false;
+    }
+    Logger::Info("Application: glfwInit succeeded");
 
-    // Standard Core 3.3 for macOS
+    // Try Core 3.3 first
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-
+    
+    Logger::Info("Application: Creating window with Core 3.3...");
     m_window = glfwCreateWindow(1280, 720, "VEEX Engine", NULL, NULL);
-    if (!m_window) return false;
+    
+    if (!m_window) {
+        Logger::Warn("Application: Core 3.3 failed, trying default hints...");
+        // Reset all hints to defaults and try again
+        glfwDefaultWindowHints();
+        m_window = glfwCreateWindow(1280, 720, "VEEX Engine", NULL, NULL);
+    }
+    
+    if (!m_window) {
+        Logger::Error("Application: glfwCreateWindow failed with all profiles");
+        return false;
+    }
+    
+    if (!m_window) {
+        Logger::Error("Application: glfwCreateWindow failed");
+        return false;
+    }
+    Logger::Info("Application: Window created successfully");
 
     glfwMakeContextCurrent(m_window);
     
@@ -65,10 +88,14 @@ bool Application::Initialize() {
         Logger::Error("Application: SoundKit failed to initialize.");
     }
 
+    Logger::Info("Initializing MaterialSystem...");
     MaterialSystem::Get().Initialize(m_gameInfo);
+    Logger::Info("MaterialSystem initialized.");
 
     // Initialize GUI system after OpenGL context is created
+    Logger::Info("Initializing GUI...");
     GUI::Get().Initialize();
+    Logger::Info("GUI initialized.");
     
     // Set GUI to start hidden
     GUI::Get().SetVisible(false);
@@ -198,9 +225,18 @@ void Application::Shutdown() {
 void Application::LoadMap(const std::string& mapFile) {
     Logger::Info("Application: Loading map: " + mapFile);
     
+    // Resolve the map file path using filesystem tools
+    std::string resolvedMapPath = ResolveAssetPath(mapFile, m_gameInfo);
+    if (resolvedMapPath.empty()) {
+        Logger::Error("Application: Failed to resolve map path: " + mapFile);
+        return;
+    }
+    
+    Logger::Info("Application: Resolved map path to: " + resolvedMapPath);
+    
     // Initialize client with the selected map
     m_client = new Client(m_window);
-    if (!m_client->Init(m_gameInfo)) {
+    if (!m_client->Init(m_gameInfo, resolvedMapPath)) {
         Logger::Error("Application: Failed to initialize client with map: " + mapFile);
         return;
     }
@@ -233,7 +269,7 @@ void Application::LoadBackgroundMap(const std::string& mapFile) {
     // Create a temporary client just to load and render the background
     // We don't initialize the full game systems - just load the BSP for rendering
     m_client = new Client(m_window);
-    if (!m_client->Init(m_gameInfo)) {
+    if (!m_client->Init(m_gameInfo, mapPath)) {
         Logger::Warn("Application: Failed to load background map: " + mapFile);
         delete m_client;
         m_client = nullptr;

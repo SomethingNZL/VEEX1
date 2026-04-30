@@ -111,6 +111,17 @@ void ShutdownFileSystem() {
 std::string ResolveAssetPath(const std::string& localPath, const GameInfo& game) {
     std::filesystem::path exeDir = Config::GetExecutableDir();
     
+    // If the path is already absolute, check directly
+    std::filesystem::path absolutePath(localPath);
+    if (absolutePath.is_absolute()) {
+        // Direct path check
+        if (std::filesystem::exists(absolutePath)) {
+            return localPath;
+        } else {
+            return "";
+        }
+    }
+
     // Clean leading slashes to ensure the path is treated as relative to the mount points
     std::string cleanPath = localPath;
     if (!cleanPath.empty() && (cleanPath[0] == '/' || cleanPath[0] == '\\')) {
@@ -144,9 +155,10 @@ std::string ResolveAssetPath(const std::string& localPath, const GameInfo& game)
 
     // Fallback directly to EXE folder
     std::filesystem::path fallback = exeDir / target;
-    if (std::filesystem::exists(fallback)) return fallback.string();
+    if (std::filesystem::exists(fallback)) {
+        return fallback.string();
+    }
 
-    Logger::Error("FS: Failed to locate asset: " + localPath);
     return "";
 }
 

@@ -20,7 +20,7 @@ class Client {
 public:
     explicit Client(::GLFWwindow* window);
 
-    bool Init(const GameInfo& game);
+    bool Init(const GameInfo& game, const std::string& mapFile);
     void SetSpawnPoint(const glm::vec3& spawnFeetPos);
     void Render(const Server& server, Skybox& skybox);
     void Shutdown();

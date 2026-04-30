@@ -1,0 +1,2 @@
+movementspeedfreecam 150.0
+mousesensitivity 0.15

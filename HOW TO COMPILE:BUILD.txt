@@ -1,7 +1,50 @@
-HOW TO BUILD.
+HOW TO BUILD VEEXEngine
+=========================
 
-FOR MACOS:
-	Do make --build build from VEEXWORKSPACE (ROOT)
-WINDOWS:
-	Do goto VEEXWORKSPACE/Build_win
-	make -I
+MACOS (Darwin)
+--------------
+Prerequisites (install via MacPorts):
+    sudo port install cmake glfw glm openssl
+
+Build:
+    cd <VEEXWORKSPACE>
+    ./build_darwin.sh [Release|Debug|RelWithDebInfo]
+
+Output:
+    build/Engine/VEEXEngine
+
+WINDOWS 10/11 (Cross-compile from macOS)
+-----------------------------------------
+Prerequisites:
+    1. MinGW-w64 (install via MacPorts):
+         sudo port install mingw-w64
+
+    2. Windows dependencies — choose ONE method:
+
+       A) vcpkg (recommended):
+          git clone https://github.com/Microsoft/vcpkg.git ~/vcpkg
+          cd ~/vcpkg && ./bootstrap-vcpkg.sh
+          ./vcpkg install glfw3:x64-mingw-dynamic
+          ./vcpkg install glm:x64-mingw-dynamic
+          ./vcpkg install openssl:x64-mingw-dynamic
+
+       B) Manual build:
+          Build GLFW3, glm, and OpenSSL for x64-mingw and set
+          CMAKE_PREFIX_PATH to the install prefix when running cmake.
+
+Build:
+    cd <VEEXWORKSPACE>
+    ./build_windows.sh [Release|Debug|RelWithDebInfo]
+
+Output:
+    build_win/Engine/VEEXEngine.exe
+
+IMPORTANT NOTES
+---------------
+• Do NOT run cmake from inside build/ or build_win/. The scripts
+  handle build directories for you.
+• If dependencies change, delete the build folder and re-run the script.
+• The mingw_toolchain.cmake file is used automatically by build_windows.sh.
+• Game assets (maps, materials, etc.) must be edited in the ./Game/ folder.
+  The build/Engine/Game/ and build_win/Engine/Game/ folders are generated
+  copies — anything placed there will be lost on clean rebuild.

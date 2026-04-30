@@ -26,25 +26,10 @@ void MainMenu::Initialize(const GameInfo& gameInfo) {
         return;
     }
 
-    // Parse the MAPorder.ORDE file
-    std::string mapOrderPath = ResolveAssetPath("MAPorder.ORDE", gameInfo);
-    
-    // Fallback: try Game/MAPorder.ORDE if not found
-    if (mapOrderPath.empty()) {
-        mapOrderPath = ResolveAssetPath("Game/MAPorder.ORDE", gameInfo);
-    }
-    
-    // Final fallback: try direct path relative to executable
-    if (mapOrderPath.empty()) {
-        std::filesystem::path exeDir = Config::GetExecutableDir();
-        std::filesystem::path fallback = exeDir / "Game" / "MAPorder.ORDE";
-        if (std::filesystem::exists(fallback)) {
-            mapOrderPath = fallback.string();
-        }
-    }
-    
-    if (!ParseMapOrderFile(mapOrderPath)) {
-        Logger::Warn("MainMenu: Failed to parse MAPorder.ORDE file.");
+    m_gameInfo = gameInfo;
+
+    if (!ParseMapOrderFile("")) {
+        Logger::Warn("MainMenu: Failed to parse map files.");
     }
 
     m_initialized = true;
@@ -119,17 +104,20 @@ void MainMenu::RenderImGuiMenu() {
     drawList->AddRectFilled(ImVec2(0, 0), ImVec2(screenWidth, screenHeight), 
                            IM_COL32(0, 0, 0, 200));
     
-    // Title - centered at top
+    // Title - centered at top (use gameinfo title if available)
+    std::string gameTitle = m_gameInfo.title.empty() ? m_gameInfo.gameName : m_gameInfo.title;
+    if (gameTitle.empty()) gameTitle = "VEEX ENGINE";
     float titleWidth = 400.0f;
     float titleX = (screenWidth - titleWidth) / 2.0f;
     ImGui::SetCursorPos(ImVec2(titleX, 80.0f));
-    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "VEEX ENGINE");
+    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "%s", gameTitle.c_str());
     
-    // Subtitle
+    // Subtitle (use developer from gameinfo if available)
+    std::string subtitle = m_gameInfo.developer.empty() ? "A Modern Game Engine" : "Developed by " + m_gameInfo.developer;
     float subtitleWidth = 250.0f;
     float subtitleX = (screenWidth - subtitleWidth) / 2.0f;
     ImGui::SetCursorPos(ImVec2(subtitleX, 140.0f));
-    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "A Modern Game Engine");
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", subtitle.c_str());
     
     // Menu container - centered
     float menuWidth = 300.0f;
@@ -148,9 +136,7 @@ void MainMenu::RenderImGuiMenu() {
     
     if (ImGui::Button("PLAY GAME", ImVec2(menuWidth, 50.0f))) {
         Logger::Info("MainMenu: Play Game clicked!");
-        if (m_chapters.empty()) {
-            OnChapterSelected(0);
-        } else {
+        if (!m_chapters.empty()) {
             OnChapterSelected(0);
         }
     }
@@ -173,10 +159,23 @@ void MainMenu::RenderImGuiMenu() {
             ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
             ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
             
-            std::string buttonLabel = chapter.name;
+            std::string buttonLabel = chapter.title.empty() ? chapter.name : chapter.title;
             if (ImGui::Button(buttonLabel.c_str(), ImVec2(menuWidth, 40.0f))) {
                 Logger::Info("MainMenu: Chapter button " + std::to_string(i) + " clicked!");
                 OnChapterSelected(static_cast<int>(i));
+            }
+            
+            // Tooltip with extra info
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Map: %s", chapter.mapFile.c_str());
+                if (!chapter.developer.empty()) {
+                    ImGui::Text("Developer: %s", chapter.developer.c_str());
+                }
+                if (!chapter.description.empty()) {
+                    ImGui::Text("Game: %s", chapter.description.c_str());
+                }
+                ImGui::EndTooltip();
             }
             
             ImGui::PopStyleColor(4);
@@ -249,43 +248,51 @@ void MainMenu::RenderImGuiMenu() {
 }
 
 bool MainMenu::ParseMapOrderFile(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        Logger::Error("MainMenu: Failed to open MAPorder.ORDE file: " + path);
+    m_chapters.clear();
+
+    // Use enginePath from gameinfo as the base directory (absolute path to where gameinfo.txt lives)
+    std::string basePath = m_gameInfo.enginePath;
+    if (basePath.empty()) {
+        Logger::Error("MainMenu: GameInfo enginePath is empty, cannot locate maps.");
         return false;
     }
 
-    m_chapters.clear();
-    std::string line;
-    std::string currentChapter = "";
-
-    while (std::getline(file, line)) {
-        // Trim whitespace
-        line.erase(line.begin(), std::find_if(line.begin(), line.end(), [](unsigned char ch) {
-            return !std::isspace(ch);
-        }));
-        line.erase(std::find_if(line.rbegin(), line.rend(), [](unsigned char ch) {
-            return !std::isspace(ch);
-        }).base(), line.end());
-
-        if (line.empty()) continue;
-
-        // Check if line is a chapter header
-        if (line.back() == ':') {
-            currentChapter = line.substr(0, line.length() - 1);
-        } else if (!currentChapter.empty()) {
-            // This is a map file for the current chapter
-            ChapterInfo chapter;
-            chapter.name = currentChapter;
-            chapter.mapFile = line;
-            m_chapters.push_back(chapter);
+    // ── Scan maps/ directory for .bsp files ──────────────────
+    std::string mapsPath = basePath + "maps";
+    
+    // Normalize path separator
+    if (!mapsPath.empty() && mapsPath.back() != std::filesystem::path::preferred_separator) {
+        mapsPath += std::filesystem::path::preferred_separator;
+    }
+    
+    try {
+        if (!std::filesystem::exists(mapsPath)) {
+            Logger::Error("MainMenu: Maps directory does not exist: " + mapsPath);
+            return false;
         }
+        
+        for (const auto& entry : std::filesystem::directory_iterator(mapsPath)) {
+            if (entry.is_regular_file()) {
+                std::string filename = entry.path().filename().string();
+                // Only add .bsp files (Source engine map files)
+                if (filename.size() > 4 && filename.substr(filename.size() - 4) == ".bsp") {
+                    ChapterInfo chapter;
+                    chapter.name = filename;
+                    chapter.mapFile = "maps/" + filename;  // Add maps/ prefix for proper resolution
+                    chapter.title = filename;
+                    chapter.developer = m_gameInfo.developer;
+                    chapter.description = m_gameInfo.title;
+                    m_chapters.push_back(chapter);
+                }
+            }
+        }
+    } catch (const std::filesystem::filesystem_error& e) {
+        Logger::Error("MainMenu: Failed to list map files in " + mapsPath + ": " + e.what());
+        return false;
     }
 
-    file.close();
-
-    Logger::Info("MainMenu: Parsed " + std::to_string(m_chapters.size()) + " chapters from MAPorder.ORDE.");
-    return true;
+    Logger::Info("MainMenu: Found " + std::to_string(m_chapters.size()) + " map files in " + mapsPath);
+    return !m_chapters.empty();
 }
 
 void MainMenu::OnChapterSelected(int chapterIndex) {
@@ -300,9 +307,15 @@ void MainMenu::OnChapterSelected(int chapterIndex) {
 
     Logger::Info("MainMenu: Chapter selected: " + chapter.name + " -> " + chapter.mapFile);
 
-    // Call the chapter select callback if set
+    // Call the chapter select callback if set - use absolute path to avoid filesystem issues
     if (m_chapterSelectCallback) {
-        m_chapterSelectCallback(chapter.mapFile);
+        // Resolve the map file path using our filesystem tools to ensure it's accessible
+        std::string resolvedMapPath = ResolveAssetPath(chapter.mapFile, m_gameInfo);
+        if (resolvedMapPath.empty()) {
+            Logger::Error("MainMenu: Failed to resolve map path: " + chapter.mapFile);
+            return;
+        }
+        m_chapterSelectCallback(chapter.mapFile);  // Still pass the relative path for consistency
     }
 }
 

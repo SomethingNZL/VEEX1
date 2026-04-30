@@ -27,7 +27,7 @@ Client::Client(GLFWwindow* window)
     , m_feetPos(0.0f)
 {}
 
-bool Client::Init(const GameInfo& game)
+bool Client::Init(const GameInfo& game, const std::string& mapFile)
 {
     Logger::Info("[Client] Initializing…");
 
@@ -37,8 +37,8 @@ bool Client::Init(const GameInfo& game)
     }
 
     // LoadFromFile: parses lumps, builds lightmap atlas, builds vertex buffer.
-    Logger::Info("[Client] Loading map: maps/background01.bsp");
-    if (!m_currentMap.LoadFromFile("maps/background01.bsp", game)) {
+    Logger::Info("[Client] Loading map: " + mapFile);
+    if (!m_currentMap.LoadFromFile(mapFile, game)) {
         Logger::Error("[Client] Failed to load map.");
         return false;
     }

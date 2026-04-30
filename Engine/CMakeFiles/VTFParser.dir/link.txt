@@ -1,0 +1,2 @@
+/usr/bin/ar qc libVTFParser.a CMakeFiles/VTFParser.dir/third_party/VTFParser/src/vtf.cpp.o
+/usr/bin/ranlib libVTFParser.a

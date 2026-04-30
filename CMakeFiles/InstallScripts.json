@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/bradley/Documents/VEEX 1/VEEXworkspace/cmake_install.cmake",
+		"/Users/bradley/Documents/VEEX 1/VEEXworkspace/Engine/cmake_install.cmake",
+		"/Users/bradley/Documents/VEEX 1/VEEXworkspace/Game/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
